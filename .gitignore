@@ -1,0 +1,17 @@
+# Build
+bin/
+obj/
+artifacts/
+publish/
+
+# IDE
+.vs/
+.idea/
+*.user
+*.suo
+
+# macOS
+.DS_Store
+
+# Logs applicatifs
+*.log
