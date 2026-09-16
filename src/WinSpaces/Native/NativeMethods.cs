@@ -11,6 +11,19 @@ internal static class NativeMethods
 {
     private const string User32 = "user32.dll";
     private const string Kernel32 = "kernel32.dll";
+    private const string Hid = "hid.dll";
+    private const string NtDll = "ntdll.dll";
+
+    /// <summary>Numéro de build du vrai Windows (RtlGetVersion ignore la compatibilité).</summary>
+    internal static int GetWindowsBuildNumber()
+    {
+        var osvi = new OSVERSIONINFOEX
+        {
+            dwOSVersionInfoSize = (uint)Marshal.SizeOf<OSVERSIONINFOEX>()
+        };
+        if (RtlGetVersion(ref osvi) != 0) return 0;
+        return (int)osvi.dwBuildNumber;
+    }
 
     // --- Fenêtres & moniteurs ----------------------------------------------
     [DllImport(User32, SetLastError = true)]
@@ -27,6 +40,10 @@ internal static class NativeMethods
 
     [DllImport(User32, CharSet = CharSet.Unicode, SetLastError = true)]
     internal static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+
+    // --- RtlGetVersion ------------------------------------------------------
+    [DllImport(NtDll, CharSet = CharSet.Unicode)]
+    internal static extern int RtlGetVersion(ref OSVERSIONINFOEX lpVersionInformation);
 
     [DllImport(User32, CharSet = CharSet.Unicode, SetLastError = true)]
     internal static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
@@ -98,4 +115,18 @@ internal static class NativeMethods
 
     [DllImport(User32, SetLastError = true)]
     internal static extern uint GetRawInputData(IntPtr hRawInput, uint uiCommand, IntPtr pData, ref uint pcbSize, uint cbSizeHeader);
+
+    // --- HID parser (hid.dll) ------------------------------------------------
+    [DllImport(Hid)]
+    internal static extern uint HidP_GetCaps(IntPtr preparsedData, out HIDP_CAPS capabilities);
+
+    [DllImport(Hid)]
+    internal static extern uint HidP_GetUsageValue(
+        uint reportType, ushort usagePage, ushort linkCollection, ushort usage,
+        out uint usageValue, IntPtr preparsedData, IntPtr report, uint reportLength);
+
+    [DllImport(Hid)]
+    internal static extern uint HidP_GetUsages(
+        uint reportType, ushort usagePage, ushort linkCollection,
+        [Out] ushort[] usageList, ref uint usageLength, IntPtr preparsedData, IntPtr report, uint reportLength);
 }

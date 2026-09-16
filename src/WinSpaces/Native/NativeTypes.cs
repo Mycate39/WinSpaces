@@ -61,9 +61,27 @@ internal static class RawInputConstants
     public const uint RID_INPUT = 0x10000003;
     public const uint RIDI_DEVICEINFO = 0x2000000B;
     public const uint RIDI_DEVICENAME = 0x20000007;
+    public const uint RIDI_PREPARSEDDATA = 0x20000005;
     public const uint RIDEV_INPUTSINK = 0x00000100;
     public const uint RIDEV_DEVNOTIFY = 0x00002000;
     public const ushort USAGE_PAGE_DIGITIZER = 0x0D;
+    public const ushort USAGE_PAGE_GENERIC_DESKTOP = 0x01;
     public const ushort USAGE_TOUCHPAD = 0x05;        // Digitizer : pavé tactile
     public const ushort USAGE_TOUCH_SCREEN = 0x04;    // Digitizer : écran tactile
+
+    // Usages « Windows Precision Touchpad » (page Digitizer 0x0D).
+    public const ushort USAGE_X = 0x30;               // position absolue X d'un contact
+    public const ushort USAGE_Y = 0x31;               // position absolue Y d'un contact
+    public const ushort USAGE_TIP_SWITCH = 0x42;      // contact posé (bouton)
+    public const ushort USAGE_CONTACT_IDENTIFIER = 0x51; // slot du contact
+    public const ushort USAGE_CONTACT_COUNT = 0x54;   // nombre de contacts actifs
+    public const ushort USAGE_CONTACT_COUNT_MAX = 0x55;
+    public const ushort USAGE_SCAN_TIME = 0x56;
+    public const ushort USAGE_CONFIDENCE = 0x47;
+    public const ushort USAGE_WIDTH = 0x48;
+    public const ushort USAGE_HEIGHT = 0x49;
+
+    // HidP_* (HID parser).
+    public const uint HIDP_INPUT = 0;
+    public const uint HIDP_STATUS_SUCCESS = 0x00110000;
 }

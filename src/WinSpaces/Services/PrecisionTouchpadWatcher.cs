@@ -1,40 +1,64 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Text;
 using WinSpaces.Native;
 
 namespace WinSpaces.Services;
 
 /// <summary>
-/// Watcher Précision Touchpad (Windows 10/11) basé sur Raw Input :
-///  1. énumère les dispositifs HID et reconnaît le "Précision Touchpad"
+/// Watcher Précision Touchpad (Windows 10/11) basé sur Raw Input + HidP_* :
+///  1. énumère les dispositifs HID et reconnaît le « Précision Touchpad »
 ///     (usage page Digitizer 0x0D, usage 0x05) ;
-///  2. s'enregistre en récepteur (RIDEV_INPUTSINK) ;
-///  3. reçoit WM_INPUT sur la fenêtre message-only et analyse les rapports HID.
-///
-/// Chaque rapport contient le nombre de contacts ; un balayage horizontal
-/// soutenu avec ≥3 contacts déclenche un changement d'espace (macOS utilise
-/// 3/4 doigts). Le parsing est best-effort : les fabricants varient dans
-/// l'ordre/la taille des champs, d'où des seuils et offsets documentés.
+///  2. récupère les données « preparsed » du rapport HID (RIDI_PREPARSEDDATA) ;
+///  3. s'enregistre en récepteur (RIDEV_INPUTSINK) ;
+///  4. décode chaque rapport via les API HidP_* (HidP_GetUsageValue/GetUsages)
+///     au lieu d'offsets figés — indépendant du constructeur du pavé ;
+///  5. un balayage horizontal soutenu avec ≥ 3 contacts déclenche le changement
+///     d'espace (comme macOS : un seul déclenchement jusqu'au lever complet des
+///     doigts, qui ré-arme le geste).
 /// </summary>
 internal sealed class PrecisionTouchpadWatcher : IDisposable
 {
+    private const int MaxContacts = 16;
+
     /// <summary>Nombre minimal de contacts pour activer le swipe.</summary>
     private const int MinContactsForSwipe = 3;
 
-    /// <summary>Seuil de distance cumulée (unités report) pour déclencher.</summary>
-    private const int SwipeDeltaThreshold = 60;
+    /// <summary>Delta cumulé (somme des X des contacts) déclenchant le swipe.</summary>
+    private const int SwipeDeltaThreshold = 800;
 
-    /// <summary>Fenêtre maxi d'un balayage (durée).</summary>
-    private static readonly TimeSpan SwipeWindow = TimeSpan.FromMilliseconds(400);
+    /// <summary>Garde anti-saut : un écart X supérieur (rewrapping absolu) est ignoré.</summary>
+    private const int MaxContactStep = 0x4000;
+
+    private const int MaxButtons = 8;
+
+    /// <summary>Un contact est « suivi » tant que ses rapports arrivent dans cette fenêtre.</summary>
+    private static readonly long ContactStaleTicks = MsToTicks(120);
+
+    /// <summary>Sans rapport pendant cette durée, la session de geste est réinitialisée.</summary>
+    private static readonly long NewSessionTicks = MsToTicks(200);
+
+    private static long MsToTicks(long ms) => ms * Stopwatch.Frequency / 1000;
 
     private readonly MessageWindow? _sourceWindow;
 
-    // État courant du suivi de balayage.
-    private long _lastContactsXTotal;
-    private int _lastContactCount;
-    private long _swipeDeltaAccum;
-    private DateTime _swipeStartUtc = DateTime.MinValue;
+    /// <summary>Données « preparsed » du pavé (ownership via HidD_FreePreparsedData).</summary>
+    private IntPtr _preparsedData;
 
+    // Compteur de doigts : champ « Contact Count » (0x54) quand le pavé le fournit
+    // (obligatoire pour la certification Précision Touchpad), sinon déduit des
+    // identifiants de contact encore posés.
+    private bool _haveContactCount;
+    private int _activeContactCount;
+
+    // Suivi des contacts (par slot) pour mesurer le mouvement horizontal sans
+    // dépendre de l'ordre des rapports.
+    private readonly HashSet<int> _activeIds = new();
+    private readonly long[] _contactX = new long[MaxContacts];
+    private readonly long[] _contactTs = new long[MaxContacts];
+
+    private long _deltaAccum;
+    private bool _swipeTriggered;
+    private long _lastReportTs;
     private bool _disposed;
 
     public PrecisionTouchpadWatcher(MessageWindow? sourceWindow)
@@ -50,7 +74,6 @@ internal sealed class PrecisionTouchpadWatcher : IDisposable
         if (_sourceWindow is null || _disposed) return;
 
         PrecisionTouchpadPresent = EnumeratePrecisionTouchpad();
-
         if (!PrecisionTouchpadPresent)
         {
             AppLog.Info("Précision Touchpad absent : mode momentum (fallback) utilisé.");
@@ -76,6 +99,8 @@ internal sealed class PrecisionTouchpadWatcher : IDisposable
             return;
         }
 
+        LogHidCaps();
+
         _sourceWindow.WindowMessage += OnWindowMessage;
         AppLog.Info("Précision Touchpad détecté : Raw Input 3/4 doigts activé.");
     }
@@ -84,39 +109,46 @@ internal sealed class PrecisionTouchpadWatcher : IDisposable
     {
         try
         {
+            FreePreparsedData();
+
             uint count = 0;
-            uint result = NativeMethods.GetRawInputDeviceList(null, ref count, (uint)Marshal.SizeOf<RAWINPUTDEVICELIST>());
+            uint result = NativeMethods.GetRawInputDeviceList(
+                null, ref count, (uint)Marshal.SizeOf<RAWINPUTDEVICELIST>());
             if (result != 0 || count == 0) return false;
 
             var devices = new RAWINPUTDEVICELIST[count];
-            uint actual = NativeMethods.GetRawInputDeviceList(devices, ref count, (uint)Marshal.SizeOf<RAWINPUTDEVICELIST>());
+            uint actual = NativeMethods.GetRawInputDeviceList(
+                devices, ref count, (uint)Marshal.SizeOf<RAWINPUTDEVICELIST>());
 
             for (var i = 0; i < actual; i++)
             {
                 if (devices[i].dwType != RawInputConstants.RIM_TYPE_HID) continue;
 
-                var info = new RID_DEVICE_INFO();
-                uint size = (uint)Marshal.SizeOf<RID_DEVICE_INFO>();
-                info.cbSize = size;
+                var info = new RID_DEVICE_INFO
+                {
+                    cbSize = (uint)Marshal.SizeOf<RID_DEVICE_INFO>()
+                };
 
-                IntPtr buffer = Marshal.AllocHGlobal((int)size);
+                IntPtr buffer = Marshal.AllocHGlobal((int)info.cbSize);
                 try
                 {
                     Marshal.StructureToPtr(info, buffer, false);
-                    uint infoSize = (uint)Marshal.SizeOf<RID_DEVICE_INFO>();
-                    uint read = NativeMethods.GetRawInputDeviceInfo(devices[i].hDevice, RawInputConstants.RIDI_DEVICEINFO, buffer, ref infoSize);
-                    if (read != uint.MaxValue)
+                    uint infoSize = info.cbSize;
+                    uint read = NativeMethods.GetRawInputDeviceInfo(
+                        devices[i].hDevice, RawInputConstants.RIDI_DEVICEINFO, buffer, ref infoSize);
+                    if (read == uint.MaxValue) continue;
+
+                    info = Marshal.PtrToStructure<RID_DEVICE_INFO>(buffer);
+
+                    // Précision Touchpad : Digitizer/Touchpad (page 0x0D, usage 0x05)
+                    // ou Digitizer/Pavé 4 doigts selon les constructeurs.
+                    if (info.hid.usUsagePage == RawInputConstants.USAGE_PAGE_DIGITIZER
+                        && (info.hid.usUsage == RawInputConstants.USAGE_TOUCHPAD
+                            || info.hid.usUsage == 0x0E))
                     {
-                        info = Marshal.PtrToStructure<RID_DEVICE_INFO>(buffer);
-                        // Précision Touchpad : Digitizer/Touchpad (page 0x0D, usage 0x05)
-                        // ou Digitizer/Pavé 4 doigts selon les constructeurs.
-                        if (info.hid.usUsagePage == RawInputConstants.USAGE_PAGE_DIGITIZER
-                            && (info.hid.usUsage == RawInputConstants.USAGE_TOUCHPAD
-                                || info.hid.usUsage == 0x0E))
-                        {
-                            AppLog.Info($"Précision Touchpad détecté : VID=0x{info.hid.dwVendorId:X4} PID=0x{info.hid.dwProductId:X4}.");
-                            return true;
-                        }
+                        AppLog.Info($"Précision Touchpad détecté : VID=0x{info.hid.dwVendorId:X4} PID=0x{info.hid.dwProductId:X4}.");
+                        _preparsedData = AcquirePreparsedData(devices[i].hDevice);
+                        return true;
                     }
                 }
                 finally
@@ -134,6 +166,42 @@ internal sealed class PrecisionTouchpadWatcher : IDisposable
         }
     }
 
+    private IntPtr AcquirePreparsedData(IntPtr hDevice)
+    {
+        uint size = 0;
+        NativeMethods.GetRawInputDeviceInfo(
+            hDevice, RawInputConstants.RIDI_PREPARSEDDATA, IntPtr.Zero, ref size);
+        if (size == 0) return IntPtr.Zero;
+
+        IntPtr preparsed = Marshal.AllocHGlobal((int)size);
+        uint result = NativeMethods.GetRawInputDeviceInfo(
+            hDevice, RawInputConstants.RIDI_PREPARSEDDATA, preparsed, ref size);
+        if (result == uint.MaxValue || result == 0)
+        {
+            Marshal.FreeHGlobal(preparsed);
+            return IntPtr.Zero;
+        }
+        return preparsed;
+    }
+
+    /// <summary>Journalise les capacités HID du pavé (diagnostic, sans parsing figé).</summary>
+    private void LogHidCaps()
+    {
+        try
+        {
+            if (_preparsedData == IntPtr.Zero) return;
+            if (NativeMethods.HidP_GetCaps(_preparsedData, out HIDP_CAPS caps)
+                != RawInputConstants.HIDP_STATUS_SUCCESS)
+                return;
+
+            AppLog.Info($"HID : rapport={caps.InputReportByteLength}o, valeurs={caps.NumberInputValueCaps}, boutons={caps.NumberInputButtonCaps}.");
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error(ex);
+        }
+    }
+
     private void OnWindowMessage(object? sender, Message m)
     {
         if (m.Msg == Win32Messages.WM_INPUT)
@@ -142,13 +210,12 @@ internal sealed class PrecisionTouchpadWatcher : IDisposable
         }
         else if (m.Msg == Win32Messages.WM_INPUT_DEVICE_CHANGE)
         {
-            // Un Précision Touchpad a pu être branché/débranché : on ré-évalue.
+            // Un Précision Touchpad a pu être branché/débranché : on ré-évalue
+            // et on recharge les données « preparsed » du nouveau périphérique.
             AppLog.Info("WM_INPUT_DEVICE_CHANGE : ré-inventaire des dispositifs.");
             PrecisionTouchpadPresent = EnumeratePrecisionTouchpad();
         }
     }
-
-    // @@RAW@@
 
     private void ProcessRawInput(IntPtr hRawInput)
     {
@@ -170,18 +237,20 @@ internal sealed class PrecisionTouchpadWatcher : IDisposable
                 var header = Marshal.PtrToStructure<RAWINPUTHEADER>(buffer);
                 if (header.dwType != RawInputConstants.RIM_TYPE_HID) return;
 
-                // Le rapport HID suit l'en-tête : [dwSizeHid(4) | dwCount(4) | données...].
-                if (size < 8) return;
-                uint dwSizeHid = (uint)Marshal.ReadInt32(buffer, 0);
-                uint dwCount = (uint)Marshal.ReadInt32(buffer, 4);
-                int dataOffset = 8;
+                // Le rapport HID suit l'en-tête RAWINPUTHEADER :
+                //   [RAWINPUTHEADER] + dwSizeHid(4) + dwCount(4) + rapports…
+                int hidOffset = Marshal.SizeOf<RAWINPUTHEADER>();
+                if (size < hidOffset + 8) return;
+                uint dwSizeHid = (uint)Marshal.ReadInt32(buffer, hidOffset);
+                uint dwCount = (uint)Marshal.ReadInt32(buffer, hidOffset + 4);
+                int dataOffset = hidOffset + 8;
                 if (dwSizeHid == 0 || dwCount == 0) return;
 
                 for (uint i = 0; i < dwCount; i++)
                 {
                     int reportStart = dataOffset + (int)(i * dwSizeHid);
-                    if (reportStart + dwSizeHid <= size)
-                        ProcessHidReport(buffer, reportStart);
+                    if (reportStart + (int)dwSizeHid <= size)
+                        ProcessHidReport(buffer, reportStart, (int)dwSizeHid);
                 }
             }
             finally
@@ -196,56 +265,143 @@ internal sealed class PrecisionTouchpadWatcher : IDisposable
     }
 
     /// <summary>
-    /// Analyse d'un rapport de contacts "Précision Touchpad" (best-effort).
-    /// Structure générique du rapport de contacts :
-    ///   [0]        boutons (1 octet)
-    ///   [1..4]     scan time (4 octets)
-    ///   [5]        count contacts (1 octet)
-    ///   [6]        count max (1 octet)
-    ///   [7..]      contacts : id(1) + X(2) + Y(2) en little-endian
-    /// Les constructeurs peuvent différer légèrement ; les seuils sont calibrés
-    /// pour la plupart des ordinateurs portables modernes.
+    /// Décodage d'un rapport HID du Précision Touchpad via HidP_* : le rapport
+    /// contient soit le « scan/boutons » (avec Contact Count), soit les données
+    /// d'un contact. Le décodage s'appuie sur le report descriptor réel du pavé
+    /// (aucun offset lié au constructeur n'est présumé).
     /// </summary>
-    private void ProcessHidReport(IntPtr buffer, int start)
+    private void ProcessHidReport(IntPtr buffer, int start, int reportLen)
     {
-        int contacts = Marshal.ReadByte(buffer, start + 5);
-        if (contacts < MinContactsForSwipe) return;
+        if (_preparsedData == IntPtr.Zero) return;
 
-        // Positions X/Y par contact : id(1) + X(2) little-endian signé.
-        long xTotal = 0;
-        int cursor = start + 7;
-        for (int i = 0; i < contacts && cursor + 5 <= start + 100; i++)
+        var now = Stopwatch.GetTimestamp();
+
+        // Nouvelle session de geste après un silence : on remet à zéro les
+        // accumulateurs, mais on garde l'armement tant que les doigts restent
+        // posés — un seul déclenchement par geste, comme sur macOS.
+        if (_lastReportTs != 0 && now - _lastReportTs > NewSessionTicks)
         {
-            short x = (short)(Marshal.ReadByte(buffer, cursor + 1)
-                              | (Marshal.ReadByte(buffer, cursor + 2) << 8));
-            xTotal += x;
-            cursor += 5; // 1 (id) + 2 (X) + 2 (Y)
+            _deltaAccum = 0;
+            if (!_haveContactCount) _activeIds.Clear();
+        }
+        _lastReportTs = now;
+
+        var reportPtr = IntPtr.Add(buffer, start);
+
+        // 1) Contact Count (0x54) — présent dans le rapport de scan/boutons.
+        if (TryGetUsage(RawInputConstants.USAGE_PAGE_DIGITIZER,
+                RawInputConstants.USAGE_CONTACT_COUNT, reportPtr, reportLen, out uint contactCount))
+        {
+            _haveContactCount = true;
+            _activeContactCount = (int)contactCount;
         }
 
-        var now = DateTime.UtcNow;
-
-        // Nouveau balayage ou changement de nombre de doigts : réinitialise.
-        if (_lastContactCount == 0 || contacts != _lastContactCount
-            || now - _swipeStartUtc > SwipeWindow)
+        // 2) Rapport de contact : identifiant + position X (+ état du contact).
+        if (TryGetUsage(RawInputConstants.USAGE_PAGE_DIGITIZER,
+                RawInputConstants.USAGE_CONTACT_IDENTIFIER, reportPtr, reportLen, out uint contactIdRaw))
         {
-            _lastContactsXTotal = xTotal;
-            _lastContactCount = contacts;
-            _swipeDeltaAccum = 0;
-            _swipeStartUtc = now;
+            if (contactIdRaw >= MaxContacts) return;
+            int id = (int)contactIdRaw;
+
+            if (IsTipDown(reportPtr, reportLen)) _activeIds.Add(id);
+            else _activeIds.Remove(id);
+
+            // Position X : usage Generic Desktop 0x30 (spécification Précision
+            // Touchpad). Certains pavés l'exposent aussi sur Digitizer.
+            if (TryGetUsage(RawInputConstants.USAGE_PAGE_GENERIC_DESKTOP,
+                    RawInputConstants.USAGE_X, reportPtr, reportLen, out uint xv)
+                || TryGetUsage(RawInputConstants.USAGE_PAGE_DIGITIZER,
+                    RawInputConstants.USAGE_X, reportPtr, reportLen, out xv))
+            {
+                long x = xv;
+                if (_contactTs[id] != 0 && now - _contactTs[id] <= ContactStaleTicks)
+                {
+                    long d = x - _contactX[id];
+                    if (Math.Abs(d) < MaxContactStep)
+                        _deltaAccum += d;
+                }
+                _contactX[id] = x;
+                _contactTs[id] = now;
+            }
+        }
+
+        // 3) Décision de balayage.
+        int count = _haveContactCount ? _activeContactCount : _activeIds.Count;
+
+        if (count < MinContactsForSwipe)
+        {
+            // Pas assez de doigts : on remet à zéro et on ré-arme le geste.
+            _deltaAccum = 0;
+            _swipeTriggered = false;
             return;
         }
 
-        _swipeDeltaAccum += xTotal - _lastContactsXTotal;
-        _lastContactsXTotal = xTotal;
+        if (_swipeTriggered)
+        {
+            // Balayage déjà consommé : on attend le lever des doigts.
+            _deltaAccum = 0;
+            return;
+        }
 
-        if (Math.Abs(_swipeDeltaAccum) < SwipeDeltaThreshold) return;
+        if (Math.Abs(_deltaAccum) >= SwipeDeltaThreshold)
+        {
+            int direction = _deltaAccum > 0 ? -1 : 1;
+            _swipeTriggered = true;
+            _deltaAccum = 0;
 
-        int direction = _swipeDeltaAccum > 0 ? -1 : 1;
-        _lastContactCount = 0;
-        _swipeDeltaAccum = 0;
+            AppLog.Info($"Swipe {count} doigts → espace {(direction > 0 ? "suivant" : "précédent")}.");
+            SwipeDetected?.Invoke(this, direction);
+        }
+    }
 
-        AppLog.Info($"Swipe {contacts} doigts → espace {(direction > 0 ? "suivant" : "précédent")}.");
-        SwipeDetected?.Invoke(this, direction);
+    /// <summary>
+    /// HidP_GetUsageValue en essayant collection 0 (racine) puis 1 (premier
+    /// contact imbriqué). Les pavés Précision Touchpad exposent Contact Count
+    /// à la racine et X/Y/Contact Identifier dans des collections enfants.
+    /// </summary>
+    private bool TryGetUsage(ushort usagePage, ushort usage, IntPtr report, int reportLen, out uint value)
+    {
+        if (NativeMethods.HidP_GetUsageValue(RawInputConstants.HIDP_INPUT,
+                usagePage, 0, usage, out value, _preparsedData, report, (uint)reportLen)
+            == RawInputConstants.HIDP_STATUS_SUCCESS)
+            return true;
+
+        if (NativeMethods.HidP_GetUsageValue(RawInputConstants.HIDP_INPUT,
+                usagePage, 1, usage, out value, _preparsedData, report, (uint)reportLen)
+            == RawInputConstants.HIDP_STATUS_SUCCESS)
+            return true;
+
+        value = 0;
+        return false;
+    }
+
+    /// <summary>
+    /// Le contact de ce rapport est-il « posé » (Tip Switch) ? Si le rapport ne
+    /// transporte aucun bouton, on considère le contact actif.
+    /// </summary>
+    private bool IsTipDown(IntPtr report, int reportLen)
+    {
+        var usages = new ushort[MaxButtons];
+        uint length = (uint)usages.Length;
+        uint status = NativeMethods.HidP_GetUsages(RawInputConstants.HIDP_INPUT,
+            RawInputConstants.USAGE_PAGE_DIGITIZER, 0, usages, ref length,
+            _preparsedData, report, (uint)reportLen);
+
+        if (status != RawInputConstants.HIDP_STATUS_SUCCESS || length == 0)
+        {
+            length = (uint)usages.Length;
+            status = NativeMethods.HidP_GetUsages(RawInputConstants.HIDP_INPUT,
+                RawInputConstants.USAGE_PAGE_DIGITIZER, 1, usages, ref length,
+                _preparsedData, report, (uint)reportLen);
+        }
+
+        if (status != RawInputConstants.HIDP_STATUS_SUCCESS || length == 0)
+            return true; // pas de bouton décrit : le contact est considéré actif
+
+        for (var i = 0; i < length; i++)
+            if (usages[i] == RawInputConstants.USAGE_TIP_SWITCH)
+                return true;
+        return false;
     }
 
     public void Dispose()
@@ -255,5 +411,16 @@ internal sealed class PrecisionTouchpadWatcher : IDisposable
 
         if (_sourceWindow is not null)
             _sourceWindow.WindowMessage -= OnWindowMessage;
+
+        FreePreparsedData();
+    }
+
+    private void FreePreparsedData()
+    {
+        if (_preparsedData != IntPtr.Zero)
+        {
+            Marshal.FreeHGlobal(_preparsedData);
+            _preparsedData = IntPtr.Zero;
+        }
     }
 }

@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using WinSpaces.Desktops.Interop;
+using WinSpaces.Native;
 using WinSpaces.Services;
 
 namespace WinSpaces.Desktops;
@@ -9,44 +10,51 @@ namespace WinSpaces.Desktops;
 /// S'appuie sur l'API interne « explorateur » (IVirtualDesktopManagerInternal
 /// résolu via IServiceProvider10/CLSID_ImmersiveShell) et sur l'API OFFICIELLE
 /// IVirtualDesktopManager en fallback et pour les opérations par fenêtre.
+///
+/// Trois schémas COM coexistent — un seul est actif selon la version Windows :
+///  - Windows 10 1809 → 22H2 : IVirtualDesktopManagerInternal10 (IID F31574D6) ;
+///  - Windows 11 21H2 → 23H2 : IVirtualDesktopManagerInternal (IID 53F5CA0B,
+///    vtable historique, CreateDesktop en position 7) ;
+///  - Windows 11 24H2+        : IVirtualDesktopManagerInternal24H2 (même IID,
+///    vtable allongée : SwitchDesktopAndMoveForegroundView est inséré).
 /// </summary>
 internal sealed class VirtualDesktopService : IDisposable
 {
-    private IVirtualDesktopManagerInternal? _internal;
+    private IVirtualDesktopManagerInternal? _w11Last;     // Win11 ≤ 23H2
+    private IVirtualDesktopManagerInternal24H2? _w11New;  // Win11 ≥ 24H2
+    private IVirtualDesktopManagerInternal10? _w10;       // Windows 10
     private IApplicationViewCollection? _viewCollection;
     private IVirtualDesktopManager? _official;
     private bool _disposed;
 
     /// <summary>L'API interne (création/suppression/bascule) est disponible.</summary>
-    public bool IsInternalApiAvailable => _internal != null;
+    public bool IsInternalApiAvailable => _w11Last != null || _w11New != null || _w10 != null;
 
     /// <summary>L'API officielle est disponible.</summary>
     public bool IsOfficialApiAvailable => _official != null;
 
     /// <summary>Uniquement l'API officielle (fonctionnalités réduites).</summary>
-    public bool IsFallbackOnly => _internal == null && _official != null;
+    public bool IsFallbackOnly => !IsInternalApiAvailable && _official != null;
 
-    // @@VMETHODS@@
+    // @@LISTES@@
 
     /// <summary>GUID de tous les bureaux existants, dans l'ordre.</summary>
     public IReadOnlyList<Guid> GetDesktopIds()
     {
         var result = new List<Guid>();
-        var mgr = _internal;
-        if (mgr is null) return result;
-
         try
         {
-            mgr.GetDesktops(out IObjectArray desktops);
+            var desktops = GetDesktopsArray();
+            if (desktops is null) return result;
             try
             {
                 desktops.GetCount(out var count);
                 for (var i = 0; i < count; i++)
                 {
-                    var iid = typeof(IVirtualDesktop).GUID;
+                    var iid = DesktopGuid;
                     desktops.GetAt(i, ref iid, out object obj);
-                    if (obj is IVirtualDesktop vd)
-                        result.Add(vd.GetId());
+                    if (obj is not null)
+                        result.Add(GetId(obj));
                 }
             }
             finally
@@ -62,13 +70,36 @@ internal sealed class VirtualDesktopService : IDisposable
         return result;
     }
 
+    /// <summary>GUID de l'interface IVirtualDesktop correspondant au schéma actif.</summary>
+    private Guid DesktopGuid
+        => _w10 != null ? typeof(IVirtualDesktop10).GUID : typeof(IVirtualDesktop).GUID;
+
+    private static Guid GetId(object desktop)
+        => desktop switch
+        {
+            IVirtualDesktop d11 => d11.GetId(),
+            IVirtualDesktop10 d10 => d10.GetId(),
+            _ => Guid.Empty
+        };
+
+    private IObjectArray? GetDesktopsArray()
+    {
+        if (_w11Last != null) { _w11Last.GetDesktops(out var a); return a; }
+        if (_w11New != null) { _w11New.GetDesktops(out var a); return a; }
+        if (_w10 != null) { _w10.GetDesktops(out var a); return a; }
+        return null;
+    }
+
     public int Count
     {
         get
         {
             try
             {
-                return _internal?.GetCount() ?? 0;
+                if (_w11Last != null) return _w11Last.GetCount();
+                if (_w11New != null) return _w11New.GetCount();
+                if (_w10 != null) return _w10.GetCount();
+                return 0;
             }
             catch (Exception ex)
             {
@@ -77,24 +108,27 @@ internal sealed class VirtualDesktopService : IDisposable
             }
         }
     }
-
-    public Guid CurrentDesktopId
+public Guid CurrentDesktopId
     {
         get
         {
             try
             {
-                if (_internal is null) return Guid.Empty;
-                var current = _internal.GetCurrentDesktop();
-                try
+                if (_w11Last is not null || _w11New is not null)
                 {
-                    return current is null ? Guid.Empty : current.GetId();
+                    var cur = _w11Last?.GetCurrentDesktop() ?? _w11New!.GetCurrentDesktop();
+                    if (cur is null) return Guid.Empty;
+                    try { return cur.GetId(); }
+                    finally { Marshal.ReleaseComObject(cur); }
                 }
-                finally
+                if (_w10 is not null)
                 {
-                    if (current is not null)
-                        Marshal.ReleaseComObject(current);
+                    var cur = _w10.GetCurrentDesktop();
+                    if (cur is null) return Guid.Empty;
+                    try { return cur.GetId(); }
+                    finally { Marshal.ReleaseComObject(cur); }
                 }
+                return Guid.Empty;
             }
             catch (Exception ex)
             {
@@ -118,12 +152,12 @@ internal sealed class VirtualDesktopService : IDisposable
         }
     }
 
-    // @@VMETHODS2@@
+    // @@BASCULE@@
 
     /// <summary>Bascule vers le bureau d'identifiant <paramref name="id"/>.</summary>
     public bool SwitchToDesktop(Guid id)
     {
-        if (_internal is null || id == Guid.Empty) return false;
+        if (id == Guid.Empty) return false;
 
         try
         {
@@ -131,8 +165,10 @@ internal sealed class VirtualDesktopService : IDisposable
             if (vd is null) return false;
             try
             {
-                _internal.SwitchDesktop(vd);
-                return true;
+                if (_w11Last != null && vd is IVirtualDesktop d11) { _w11Last.SwitchDesktop(d11); return true; }
+                if (_w11New != null && vd is IVirtualDesktop d112) { _w11New.SwitchDesktop(d112); return true; }
+                if (_w10 != null && vd is IVirtualDesktop10 d10) { _w10.SwitchDesktop(d10); return true; }
+                return false;
             }
             finally
             {
@@ -145,36 +181,53 @@ internal sealed class VirtualDesktopService : IDisposable
             return false;
         }
     }
-
-    /// <summary>Bascule de <paramref name="offset"/> bureaux (-1 = précédent, +1 = suivant).</summary>
+/// <summary>Bascule de <paramref name="offset"/> bureaux (-1 = précédent, +1 = suivant).</summary>
     public bool SwitchByOffset(int offset)
     {
-        var mgr = _internal;
-        if (mgr is null) return false;
         if (offset != -1 && offset != 1) return false;
 
         try
         {
-            var current = mgr.GetCurrentDesktop();
-            try
+            if (_w11Last != null)
             {
-                int hr = mgr.GetAdjacentDesktop(current, offset, out IVirtualDesktop target);
-                if (hr != 0 || target is null) return false;
-
+                var current = _w11Last.GetCurrentDesktop();
+                if (current is null) return false;
                 try
                 {
-                    mgr.SwitchDesktop(target);
-                    return true;
+                    int hr = _w11Last.GetAdjacentDesktop(current, offset, out var target);
+                    if (hr != 0 || target is null) return false;
+                    try { _w11Last.SwitchDesktop(target); return true; }
+                    finally { Marshal.ReleaseComObject(target); }
                 }
-                finally
-                {
-                    Marshal.ReleaseComObject(target);
-                }
+                finally { Marshal.ReleaseComObject(current); }
             }
-            finally
+            if (_w11New != null)
             {
-                Marshal.ReleaseComObject(current);
+                var current = _w11New.GetCurrentDesktop();
+                if (current is null) return false;
+                try
+                {
+                    int hr = _w11New.GetAdjacentDesktop(current, offset, out var target);
+                    if (hr != 0 || target is null) return false;
+                    try { _w11New.SwitchDesktop(target); return true; }
+                    finally { Marshal.ReleaseComObject(target); }
+                }
+                finally { Marshal.ReleaseComObject(current); }
             }
+            if (_w10 != null)
+            {
+                var current = _w10.GetCurrentDesktop();
+                if (current is null) return false;
+                try
+                {
+                    int hr = _w10.GetAdjacentDesktop(current, offset, out var target);
+                    if (hr != 0 || target is null) return false;
+                    try { _w10.SwitchDesktop(target); return true; }
+                    finally { Marshal.ReleaseComObject(target); }
+                }
+                finally { Marshal.ReleaseComObject(current); }
+            }
+            return false;
         }
         catch (Exception ex)
         {
@@ -186,20 +239,30 @@ internal sealed class VirtualDesktopService : IDisposable
     /// <summary>Crée un nouveau bureau après le bureau courant ; retourne son GUID.</summary>
     public Guid CreateDesktop()
     {
-        if (_internal is null) return Guid.Empty;
-
         try
         {
-            var vd = _internal.CreateDesktop();
-            if (vd is null) return Guid.Empty;
-            try
+            if (_w11Last != null)
             {
-                return vd.GetId();
+                var vd = _w11Last.CreateDesktop();
+                if (vd is null) return Guid.Empty;
+                try { return vd.GetId(); }
+                finally { Marshal.ReleaseComObject(vd); }
             }
-            finally
+            if (_w11New != null)
             {
-                Marshal.ReleaseComObject(vd);
+                var vd = _w11New.CreateDesktop();
+                if (vd is null) return Guid.Empty;
+                try { return vd.GetId(); }
+                finally { Marshal.ReleaseComObject(vd); }
             }
+            if (_w10 != null)
+            {
+                var vd = _w10.CreateDesktop();
+                if (vd is null) return Guid.Empty;
+                try { return vd.GetId(); }
+                finally { Marshal.ReleaseComObject(vd); }
+            }
+            return Guid.Empty;
         }
         catch (Exception ex)
         {
@@ -208,27 +271,32 @@ internal sealed class VirtualDesktopService : IDisposable
         }
     }
 
-    // @@VMETHODS3@@
-
     /// <summary>
     /// Supprime le bureau <paramref name="id"/> ; les fenêtres résiduelles sont
     /// déplacées sur <paramref name="fallbackId"/>.
     /// </summary>
     public bool RemoveDesktop(Guid id, Guid fallbackId)
     {
-        var mgr = _internal;
-        if (mgr is null) return false;
-
         try
         {
             var target = FindDesktop(id);
             var fallback = FindDesktop(fallbackId);
-            if (target is null || fallback is null) return false;
+            if (target is null || fallback is null)
+            {
+                if (target is not null) Marshal.ReleaseComObject(target);
+                if (fallback is not null) Marshal.ReleaseComObject(fallback);
+                return false;
+            }
 
             try
             {
-                mgr.RemoveDesktop(target, fallback);
-                return true;
+                if (_w11Last != null && target is IVirtualDesktop t11 && fallback is IVirtualDesktop f11)
+                { _w11Last.RemoveDesktop(t11, f11); return true; }
+                if (_w11New != null && target is IVirtualDesktop t112 && fallback is IVirtualDesktop f112)
+                { _w11New.RemoveDesktop(t112, f112); return true; }
+                if (_w10 != null && target is IVirtualDesktop10 t10 && fallback is IVirtualDesktop10 f10)
+                { _w10.RemoveDesktop(t10, f10); return true; }
+                return false;
             }
             finally
             {
@@ -264,7 +332,7 @@ internal sealed class VirtualDesktopService : IDisposable
         }
 
         // 2) Fallback : API interne via IApplicationView.
-        if (_internal is not null && _viewCollection is not null)
+        if (_viewCollection is not null && IsInternalApiAvailable)
         {
             try
             {
@@ -272,12 +340,18 @@ internal sealed class VirtualDesktopService : IDisposable
                 if (view is null) return false;
 
                 var target = FindDesktop(desktopId);
-                if (target is null) return false;
+                if (target is null)
+                {
+                    Marshal.ReleaseComObject(view);
+                    return false;
+                }
 
                 try
                 {
-                    _internal.MoveViewToDesktop(view, target);
-                    return true;
+                    if (_w11Last != null && target is IVirtualDesktop d11) { _w11Last.MoveViewToDesktop(view, d11); return true; }
+                    if (_w11New != null && target is IVirtualDesktop d112) { _w11New.MoveViewToDesktop(view, d112); return true; }
+                    if (_w10 != null && target is IVirtualDesktop10 d10) { _w10.MoveViewToDesktop(view, d10); return true; }
+                    return false;
                 }
                 finally
                 {
@@ -324,21 +398,20 @@ internal sealed class VirtualDesktopService : IDisposable
         }
     }
 
-    private IVirtualDesktop? FindDesktop(Guid id)
+    /// <summary>RCW du bureau correspondant à <paramref name="id"/>, ou null.</summary>
+    private object? FindDesktop(Guid id)
     {
-        var mgr = _internal;
-        if (mgr is null) return null;
-
-        mgr.GetDesktops(out IObjectArray desktops);
+        var desktops = GetDesktopsArray();
+        if (desktops is null) return null;
         try
         {
             desktops.GetCount(out var count);
             for (var i = 0; i < count; i++)
             {
-                var iid = typeof(IVirtualDesktop).GUID;
+                var iid = DesktopGuid;
                 desktops.GetAt(i, ref iid, out object obj);
-                if (obj is IVirtualDesktop vd && vd.GetId() == id)
-                    return vd;
+                if (obj is not null && GetId(obj) == id)
+                    return obj;
             }
         }
         finally
@@ -348,18 +421,21 @@ internal sealed class VirtualDesktopService : IDisposable
 
         return null;
     }
-
-    // @@INIT@@
+// @@INIT@@
 
     /// <summary>
-    /// Initialise les accès au Shell : API interne (IVirtualDesktopManagerInternal),
-    /// collection de vues et API officielle. Résolution par CLSID_ImmersiveShell +
-    /// IServiceProvider10, comme le fait le Shell lui-même.
+    /// Initialise les accès au Shell : API interne (IVirtualDesktopManagerInternal
+    /// du schéma correspondant au build Windows), collection de vues et API
+    /// officielle. Résolution par CLSID_ImmersiveShell + IServiceProvider10,
+    /// comme le fait le Shell lui-même (portage MScholtes/VirtualDesktop).
     /// </summary>
     public bool Initialize()
     {
         try
         {
+            int build = NativeMethods.GetWindowsBuildNumber();
+            AppLog.Info($"Windows : {Environment.OSVersion} (build {build}).");
+
             var immersiveType = Type.GetTypeFromCLSID(Guids.CLSID_ImmersiveShell);
             if (immersiveType is null)
             {
@@ -368,24 +444,26 @@ internal sealed class VirtualDesktopService : IDisposable
             }
 
             var shellInstance = Activator.CreateInstance(immersiveType);
-            if (shellInstance is null)
-            {
-                AppLog.Error(new Exception("Impossible d'instancier l'ImmersiveShell."));
-                return false;
-            }
-
             if (shellInstance is IServiceProvider10 provider)
             {
-                // API interne : création/suppression/bascule de bureaux.
-                var svcInternal = Guids.CLSID_VirtualDesktopManagerInternal;
-                var riidInternal = typeof(IVirtualDesktopManagerInternal).GUID;
-                _internal = provider.QueryService(ref svcInternal, ref riidInternal)
-                    as IVirtualDesktopManagerInternal;
+                if (build >= 26100)
+                    _w11New = TryQueryInternal<IVirtualDesktopManagerInternal24H2>(provider, "11 24H2");
+                else if (build >= 22000)
+                    _w11Last = TryQueryInternal<IVirtualDesktopManagerInternal>(provider, "11");
+                else if (build == 0)
+                {
+                    // RtlGetVersion a échoué : on tente 24H2 puis 11, puis 10.
+                    _w11New = TryQueryInternal<IVirtualDesktopManagerInternal24H2>(provider, "11 24H2 (build inconnu)");
+                    if (_w11New is null)
+                        _w11Last = TryQueryInternal<IVirtualDesktopManagerInternal>(provider, "11 (build inconnu)");
+                }
 
-                // Collection de vues (déplacement de fenêtre par HWND sans l'API officielle).
-                var svcViews = typeof(IApplicationViewCollection).GUID;
-                _viewCollection = provider.QueryService(ref svcViews, ref svcViews)
-                    as IApplicationViewCollection;
+                // En dernier recours (y compris si le schéma 11 n'a pas abouti) :
+                // schéma Windows 10. Chaque tentative est blindée par try/catch.
+                if (_w11Last is null && _w11New is null)
+                    _w10 = TryQueryInternal<IVirtualDesktopManagerInternal10>(provider, "10 (fallback)");
+
+                ResolveViewCollection(provider);
             }
             else
             {
@@ -416,6 +494,46 @@ internal sealed class VirtualDesktopService : IDisposable
         }
     }
 
+    private T? TryQueryInternal<T>(IServiceProvider10 provider, string label) where T : class
+    {
+        try
+        {
+            var svc = Guids.CLSID_VirtualDesktopManagerInternal;
+            var riid = typeof(T).GUID;
+            int hr = provider.QueryService(ref svc, ref riid, out object? unk);
+            if (hr != 0 || unk is null)
+            {
+                AppLog.Info($"Schéma COM Windows {label} : QueryService hr=0x{hr:X8}.");
+                return null;
+            }
+            return unk as T;
+        }
+        catch (Exception ex)
+        {
+            AppLog.Info($"Schéma COM Windows {label} indisponible : {ex.Message}");
+            return null;
+        }
+    }
+
+    private void ResolveViewCollection(IServiceProvider10 provider)
+    {
+        try
+        {
+            var svc = typeof(IApplicationViewCollection).GUID;
+            int hr = provider.QueryService(ref svc, ref svc, out object? unk);
+            if (hr != 0 || unk is null)
+            {
+                AppLog.Info($"IApplicationViewCollection : QueryService hr=0x{hr:X8}.");
+                return;
+            }
+            _viewCollection = unk as IApplicationViewCollection;
+        }
+        catch (Exception ex)
+        {
+            AppLog.Info($"IApplicationViewCollection indisponible : {ex.Message}");
+        }
+    }
+
     private void DisposeInternal()
     {
         if (_disposed) return;
@@ -427,10 +545,14 @@ internal sealed class VirtualDesktopService : IDisposable
                 Marshal.ReleaseComObject(rcw);
         }
 
-        Release(_internal);
+        Release(_w11Last);
+        Release(_w11New);
+        Release(_w10);
         Release(_viewCollection);
         Release(_official);
-        _internal = null;
+        _w11Last = null;
+        _w11New = null;
+        _w10 = null;
         _viewCollection = null;
         _official = null;
     }

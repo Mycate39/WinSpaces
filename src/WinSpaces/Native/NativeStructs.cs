@@ -125,6 +125,54 @@ internal struct RAWHID
 }
 
 // ---------------------------------------------------------------------------
+// HID (HidP_*) : descripteur « preparsed" du rapport fourni par le pilote HID.
+// ---------------------------------------------------------------------------
+
+/// <summary>
+/// HIDP_CAPS (hidpi.h) : 32 USHORT, soit 64 octets — lecture seule des
+/// capacités du rapport HID (tailles des rapports, nombre de caps).
+/// </summary>
+[StructLayout(LayoutKind.Sequential)]
+internal struct HIDP_CAPS
+{
+    public ushort Usage;
+    public ushort UsagePage;
+    public ushort InputReportByteLength;
+    public ushort OutputReportByteLength;
+    public ushort FeatureReportByteLength;
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 17)]
+    public ushort[] Reserved;
+    public ushort NumberLinkCollectionNodes;
+    public ushort NumberInputButtonCaps;
+    public ushort NumberInputValueCaps;
+    public ushort NumberInputDataIndices;
+    public ushort NumberOutputButtonCaps;
+    public ushort NumberOutputValueCaps;
+    public ushort NumberOutputDataIndices;
+    public ushort NumberFeatureButtonCaps;
+    public ushort NumberFeatureValueCaps;
+    public ushort NumberFeatureDataIndices;
+}
+
+/// <summary>OSVERSIONINFOEXW (winnt.h) — utilisé avec RtlGetVersion (version réelle).</summary>
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+internal struct OSVERSIONINFOEX
+{
+    public uint dwOSVersionInfoSize;
+    public uint dwMajorVersion;
+    public uint dwMinorVersion;
+    public uint dwBuildNumber;
+    public uint dwPlatformId;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
+    public string szCSDVersion;
+    public ushort wServicePackMajor;
+    public ushort wServicePackMinor;
+    public ushort wSuiteMask;
+    public byte wProductType;
+    public byte wReserved;
+}
+
+// ---------------------------------------------------------------------------
 // Délégués
 // ---------------------------------------------------------------------------
 

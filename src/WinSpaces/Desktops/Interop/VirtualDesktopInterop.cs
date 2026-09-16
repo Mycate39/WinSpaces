@@ -6,7 +6,13 @@
 // VirtualDesktop (https://github.com/MScholtes/VirtualDesktop), licence MIT
 // © 2017 Markus Scholtes. L'ordre EXACT des méthodes (vtable) est préservé,
 // indispensable pour appeler ces interfaces non documentées.
-// Cachet de compatibilité : Windows 10 1809 → Windows 11 23H2.
+// Trois schémas coexistent, sélectionnés au runtime par le numéro de build :
+//   - Windows 10 1809 → 22H2 : IVirtualDesktop/IVirtualDesktopManagerInternal10
+//                              (IID F31574D6 / FF72FFDD) ;
+//   - Windows 11 21H2 → 23H2 : IVirtualDesktop/IVirtualDesktopManagerInternal
+//                              (IID 53F5CA0B / 3F07F4BE, vtable historique) ;
+//   - Windows 11 24H2+        : IVirtualDesktopManagerInternal24H2 (même IID,
+//                              vtable allongée : SwitchDesktopAndMoveForegroundView).
 // ---------------------------------------------------------------------------
 
 using System.Runtime.InteropServices;
@@ -137,24 +143,30 @@ internal interface IApplicationViewCollection
 }
 
 // ---------------------------------------------------------------------------
-// IVirtualDesktop — {FF72FFDD-BE7E-43FC-9C03-AD81681E88E4}
+// IVirtualDesktop (Windows 11 21H2 → 23H2) — {3F07F4BE-B107-441A-AF0F-39D82529072C}
 // ---------------------------------------------------------------------------
 [ComImport]
 [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-[Guid("FF72FFDD-BE7E-43FC-9C03-AD81681E88E4")]
+[Guid("3F07F4BE-B107-441A-AF0F-39D82529072C")]
 internal interface IVirtualDesktop
 {
     bool IsViewVisible(IApplicationView view);
     Guid GetId();
+    [return: MarshalAs(UnmanagedType.HString)]
+    string GetName();
+    [return: MarshalAs(UnmanagedType.HString)]
+    string GetWallpaperPath();
+    bool IsRemote();
 }
 
 // ---------------------------------------------------------------------------
-// IVirtualDesktopManagerInternal — {F31574D6-B682-4CDC-BD56-1827860ABEC6}
-// API interne du Shell (non documentée) : cœur de WinSpaces.
+// IVirtualDesktopManagerInternal (Windows 11 21H2 → 23H2) — {53F5CA0B-...}
+// Vtable historique : CreateDesktop en position 7. Portage fidèle de
+// MScholtes/VirtualDesktop (VirtualDesktop11.cs), ordre EXACT des méthodes.
 // ---------------------------------------------------------------------------
 [ComImport]
 [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-[Guid("F31574D6-B682-4CDC-BD56-1827860ABEC6")]
+[Guid("53F5CA0B-158F-4124-900C-057158060B27")]
 internal interface IVirtualDesktopManagerInternal
 {
     int GetCount();
@@ -166,18 +178,30 @@ internal interface IVirtualDesktopManagerInternal
     int GetAdjacentDesktop(IVirtualDesktop from, int direction, out IVirtualDesktop desktop);
     void SwitchDesktop(IVirtualDesktop desktop);
     IVirtualDesktop CreateDesktop();
+    void MoveDesktop(IVirtualDesktop desktop, int nIndex);
     void RemoveDesktop(IVirtualDesktop desktop, IVirtualDesktop fallback);
     IVirtualDesktop FindDesktop(ref Guid desktopid);
+    void GetDesktopSwitchIncludeExcludeViews(IVirtualDesktop desktop, out IObjectArray unknown1, out IObjectArray unknown2);
+    void SetDesktopName(IVirtualDesktop desktop, [MarshalAs(UnmanagedType.HString)] string name);
+    void SetDesktopWallpaper(IVirtualDesktop desktop, [MarshalAs(UnmanagedType.HString)] string path);
+    void UpdateWallpaperPathForAllDesktops([MarshalAs(UnmanagedType.HString)] string path);
+    void CopyDesktopState(IApplicationView pView0, IApplicationView pView1);
+    void CreateRemoteDesktop([MarshalAs(UnmanagedType.HString)] string path, out IVirtualDesktop desktop);
+    void SwitchRemoteDesktop(IVirtualDesktop desktop, IntPtr switchtype);
+    void SwitchDesktopWithAnimation(IVirtualDesktop desktop);
+    void GetLastActiveDesktop(out IVirtualDesktop desktop);
+    void WaitForAnimationToComplete();
 }
 
 // ---------------------------------------------------------------------------
-// IVirtualDesktopManagerInternal2 — {0F3A72B0-4566-487E-9A33-4ED302F6D6CE}
-// (Windows 10 2004+) : ajoute le nommage des bureaux. Optionnel.
+// IVirtualDesktopManagerInternal24H2 (Windows 11 24H2+) — même IID {53F5CA0B-...}
+// La vtable intercale SwitchDesktopAndMoveForegroundView AVANT CreateDesktop.
+// Portage fidèle de MScholtes/VirtualDesktop (VirtualDesktop11-24H2.cs).
 // ---------------------------------------------------------------------------
 [ComImport]
 [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-[Guid("0F3A72B0-4566-487E-9A33-4ED302F6D6CE")]
-internal interface IVirtualDesktopManagerInternal2
+[Guid("53F5CA0B-158F-4124-900C-057158060B27")]
+internal interface IVirtualDesktopManagerInternal24H2
 {
     int GetCount();
     void MoveViewToDesktop(IApplicationView view, IVirtualDesktop desktop);
@@ -187,11 +211,55 @@ internal interface IVirtualDesktopManagerInternal2
     [PreserveSig]
     int GetAdjacentDesktop(IVirtualDesktop from, int direction, out IVirtualDesktop desktop);
     void SwitchDesktop(IVirtualDesktop desktop);
+    void SwitchDesktopAndMoveForegroundView(IVirtualDesktop desktop);
     IVirtualDesktop CreateDesktop();
+    void MoveDesktop(IVirtualDesktop desktop, int nIndex);
     void RemoveDesktop(IVirtualDesktop desktop, IVirtualDesktop fallback);
     IVirtualDesktop FindDesktop(ref Guid desktopid);
-    void Unknown1(IVirtualDesktop desktop, out IntPtr unknown1, out IntPtr unknown2);
-    void SetName(IVirtualDesktop desktop, [MarshalAs(UnmanagedType.HString)] string name);
+    void GetDesktopSwitchIncludeExcludeViews(IVirtualDesktop desktop, out IObjectArray unknown1, out IObjectArray unknown2);
+    void SetDesktopName(IVirtualDesktop desktop, [MarshalAs(UnmanagedType.HString)] string name);
+    void SetDesktopWallpaper(IVirtualDesktop desktop, [MarshalAs(UnmanagedType.HString)] string path);
+    void UpdateWallpaperPathForAllDesktops([MarshalAs(UnmanagedType.HString)] string path);
+    void CopyDesktopState(IApplicationView pView0, IApplicationView pView1);
+    void CreateRemoteDesktop([MarshalAs(UnmanagedType.HString)] string path, out IVirtualDesktop desktop);
+    void SwitchRemoteDesktop(IVirtualDesktop desktop, IntPtr switchtype);
+    void SwitchDesktopWithAnimation(IVirtualDesktop desktop);
+    void GetLastActiveDesktop(out IVirtualDesktop desktop);
+    void WaitForAnimationToComplete();
+}
+
+// ---------------------------------------------------------------------------
+// IVirtualDesktop10 (Windows 10 1809 → 22H2) — {FF72FFDD-BE7E-43FC-9C03-AD81681E88E4}
+// ---------------------------------------------------------------------------
+[ComImport]
+[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+[Guid("FF72FFDD-BE7E-43FC-9C03-AD81681E88E4")]
+internal interface IVirtualDesktop10
+{
+    bool IsViewVisible(IApplicationView view);
+    Guid GetId();
+}
+
+// ---------------------------------------------------------------------------
+// IVirtualDesktopManagerInternal10 (Windows 10 1809 → 22H2) — {F31574D6-...}
+// API interne « historique » : cœur de WinSpaces sur Windows 10.
+// ---------------------------------------------------------------------------
+[ComImport]
+[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+[Guid("F31574D6-B682-4CDC-BD56-1827860ABEC6")]
+internal interface IVirtualDesktopManagerInternal10
+{
+    int GetCount();
+    void MoveViewToDesktop(IApplicationView view, IVirtualDesktop10 desktop);
+    bool CanViewMoveDesktops(IApplicationView view);
+    IVirtualDesktop10 GetCurrentDesktop();
+    void GetDesktops(out IObjectArray desktops);
+    [PreserveSig]
+    int GetAdjacentDesktop(IVirtualDesktop10 from, int direction, out IVirtualDesktop10 desktop);
+    void SwitchDesktop(IVirtualDesktop10 desktop);
+    IVirtualDesktop10 CreateDesktop();
+    void RemoveDesktop(IVirtualDesktop10 desktop, IVirtualDesktop10 fallback);
+    IVirtualDesktop10 FindDesktop(ref Guid desktopid);
 }
 
 // ---------------------------------------------------------------------------
@@ -251,6 +319,6 @@ internal interface IObjectArray
 [Guid("6D5140C1-7436-11CE-8034-00AA006009FA")]
 internal interface IServiceProvider10
 {
-    [return: MarshalAs(UnmanagedType.IUnknown)]
-    object QueryService(ref Guid service, ref Guid riid);
+    [PreserveSig]
+    int QueryService(ref Guid service, ref Guid riid, [MarshalAs(UnmanagedType.IUnknown)] out object ppvObject);
 }
