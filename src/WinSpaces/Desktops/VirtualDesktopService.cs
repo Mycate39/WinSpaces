@@ -84,8 +84,8 @@ internal sealed class VirtualDesktopService : IDisposable
 
     private IObjectArray? GetDesktopsArray()
     {
-        if (_w11Last != null) { _w11Last.GetDesktops(out var a); return a; }
         if (_w11New != null) { _w11New.GetDesktops(out var a); return a; }
+        if (_w11Last != null) { _w11Last.GetDesktops(out var a); return a; }
         if (_w10 != null) { _w10.GetDesktops(out var a); return a; }
         return null;
     }
@@ -96,8 +96,8 @@ internal sealed class VirtualDesktopService : IDisposable
         {
             try
             {
-                if (_w11Last != null) return _w11Last.GetCount();
                 if (_w11New != null) return _w11New.GetCount();
+                if (_w11Last != null) return _w11Last.GetCount();
                 if (_w10 != null) return _w10.GetCount();
                 return 0;
             }
@@ -108,15 +108,15 @@ internal sealed class VirtualDesktopService : IDisposable
             }
         }
     }
-public Guid CurrentDesktopId
+    public Guid CurrentDesktopId
     {
         get
         {
             try
             {
-                if (_w11Last is not null || _w11New is not null)
+                if (_w11New is not null || _w11Last is not null)
                 {
-                    var cur = _w11Last?.GetCurrentDesktop() ?? _w11New!.GetCurrentDesktop();
+                    var cur = _w11New?.GetCurrentDesktop() ?? _w11Last!.GetCurrentDesktop();
                     if (cur is null) return Guid.Empty;
                     try { return cur.GetId(); }
                     finally { Marshal.ReleaseComObject(cur); }
@@ -165,8 +165,8 @@ public Guid CurrentDesktopId
             if (vd is null) return false;
             try
             {
+                if (_w11New != null && vd is IVirtualDesktop d112) { _w11New.SwitchDesktopAndMoveForegroundView(d112); return true; }
                 if (_w11Last != null && vd is IVirtualDesktop d11) { _w11Last.SwitchDesktop(d11); return true; }
-                if (_w11New != null && vd is IVirtualDesktop d112) { _w11New.SwitchDesktop(d112); return true; }
                 if (_w10 != null && vd is IVirtualDesktop10 d10) { _w10.SwitchDesktop(d10); return true; }
                 return false;
             }
@@ -181,13 +181,26 @@ public Guid CurrentDesktopId
             return false;
         }
     }
-/// <summary>Bascule de <paramref name="offset"/> bureaux (-1 = précédent, +1 = suivant).</summary>
+    /// <summary>Bascule de <paramref name="offset"/> bureaux (-1 = précédent, +1 = suivant).</summary>
     public bool SwitchByOffset(int offset)
     {
         if (offset != -1 && offset != 1) return false;
 
         try
         {
+            if (_w11New != null)
+            {
+                var current = _w11New.GetCurrentDesktop();
+                if (current is null) return false;
+                try
+                {
+                    int hr = _w11New.GetAdjacentDesktop(current, offset, out var target);
+                    if (hr != 0 || target is null) return false;
+                    try { _w11New.SwitchDesktopAndMoveForegroundView(target); return true; }
+                    finally { Marshal.ReleaseComObject(target); }
+                }
+                finally { Marshal.ReleaseComObject(current); }
+            }
             if (_w11Last != null)
             {
                 var current = _w11Last.GetCurrentDesktop();
@@ -197,19 +210,6 @@ public Guid CurrentDesktopId
                     int hr = _w11Last.GetAdjacentDesktop(current, offset, out var target);
                     if (hr != 0 || target is null) return false;
                     try { _w11Last.SwitchDesktop(target); return true; }
-                    finally { Marshal.ReleaseComObject(target); }
-                }
-                finally { Marshal.ReleaseComObject(current); }
-            }
-            if (_w11New != null)
-            {
-                var current = _w11New.GetCurrentDesktop();
-                if (current is null) return false;
-                try
-                {
-                    int hr = _w11New.GetAdjacentDesktop(current, offset, out var target);
-                    if (hr != 0 || target is null) return false;
-                    try { _w11New.SwitchDesktop(target); return true; }
                     finally { Marshal.ReleaseComObject(target); }
                 }
                 finally { Marshal.ReleaseComObject(current); }
@@ -241,16 +241,16 @@ public Guid CurrentDesktopId
     {
         try
         {
-            if (_w11Last != null)
+            if (_w11New != null)
             {
-                var vd = _w11Last.CreateDesktop();
+                var vd = _w11New.CreateDesktop();
                 if (vd is null) return Guid.Empty;
                 try { return vd.GetId(); }
                 finally { Marshal.ReleaseComObject(vd); }
             }
-            if (_w11New != null)
+            if (_w11Last != null)
             {
-                var vd = _w11New.CreateDesktop();
+                var vd = _w11Last.CreateDesktop();
                 if (vd is null) return Guid.Empty;
                 try { return vd.GetId(); }
                 finally { Marshal.ReleaseComObject(vd); }
@@ -290,10 +290,10 @@ public Guid CurrentDesktopId
 
             try
             {
-                if (_w11Last != null && target is IVirtualDesktop t11 && fallback is IVirtualDesktop f11)
-                { _w11Last.RemoveDesktop(t11, f11); return true; }
                 if (_w11New != null && target is IVirtualDesktop t112 && fallback is IVirtualDesktop f112)
                 { _w11New.RemoveDesktop(t112, f112); return true; }
+                if (_w11Last != null && target is IVirtualDesktop t11 && fallback is IVirtualDesktop f11)
+                { _w11Last.RemoveDesktop(t11, f11); return true; }
                 if (_w10 != null && target is IVirtualDesktop10 t10 && fallback is IVirtualDesktop10 f10)
                 { _w10.RemoveDesktop(t10, f10); return true; }
                 return false;
@@ -348,8 +348,8 @@ public Guid CurrentDesktopId
 
                 try
                 {
-                    if (_w11Last != null && target is IVirtualDesktop d11) { _w11Last.MoveViewToDesktop(view, d11); return true; }
                     if (_w11New != null && target is IVirtualDesktop d112) { _w11New.MoveViewToDesktop(view, d112); return true; }
+                    if (_w11Last != null && target is IVirtualDesktop d11) { _w11Last.MoveViewToDesktop(view, d11); return true; }
                     if (_w10 != null && target is IVirtualDesktop10 d10) { _w10.MoveViewToDesktop(view, d10); return true; }
                     return false;
                 }
