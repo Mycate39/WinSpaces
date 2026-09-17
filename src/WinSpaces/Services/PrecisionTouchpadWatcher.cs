@@ -225,6 +225,9 @@ internal sealed class PrecisionTouchpadWatcher : IDisposable
             uint size = 0;
             NativeMethods.GetRawInputData(hRawInput, RawInputConstants.RID_INPUT,
                 IntPtr.Zero, ref size, (uint)Marshal.SizeOf<RAWINPUTHEADER>());
+                
+            AppLog.Info($"WM_INPUT reçu. Handle: 0x{hRawInput:X}. Taille calculée: {size} octets.");
+                
             if (size == 0 || size > 4096) return;
 
             IntPtr buffer = Marshal.AllocHGlobal((int)size);
@@ -232,25 +235,49 @@ internal sealed class PrecisionTouchpadWatcher : IDisposable
             {
                 uint read = NativeMethods.GetRawInputData(hRawInput, RawInputConstants.RID_INPUT,
                     buffer, ref size, (uint)Marshal.SizeOf<RAWINPUTHEADER>());
-                if (read == uint.MaxValue) return;
+                if (read == uint.MaxValue) 
+                {
+                    AppLog.Info("Erreur GetRawInputData : uint.MaxValue retourné.");
+                    return;
+                }
 
                 var header = Marshal.PtrToStructure<RAWINPUTHEADER>(buffer);
-                if (header.dwType != RawInputConstants.RIM_TYPE_HID) return;
+                AppLog.Info($"RAWINPUTHEADER → Type: {header.dwType}, Size: {header.dwSize}, hDevice: 0x{header.hDevice:X}");
+
+                if (header.dwType != RawInputConstants.RIM_TYPE_HID)
+                {
+                    AppLog.Info($"Rejeté: Le périphérique n'est pas de type HID (Type {header.dwType}).");
+                    return;
+                }
 
                 // Le rapport HID suit l'en-tête RAWINPUTHEADER :
                 //   [RAWINPUTHEADER] + dwSizeHid(4) + dwCount(4) + rapports…
                 int hidOffset = Marshal.SizeOf<RAWINPUTHEADER>();
-                if (size < hidOffset + 8) return;
+                if (size < hidOffset + 8) 
+                {
+                    AppLog.Info($"Taille insuffisante pour les métadonnées HID ({size} < {hidOffset + 8}).");
+                    return;
+                }
+                
                 uint dwSizeHid = (uint)Marshal.ReadInt32(buffer, hidOffset);
                 uint dwCount = (uint)Marshal.ReadInt32(buffer, hidOffset + 4);
                 int dataOffset = hidOffset + 8;
+                AppLog.Info($"HID Info → dwSizeHid: {dwSizeHid}, dwCount: {dwCount}, offset: {dataOffset}");
+                
                 if (dwSizeHid == 0 || dwCount == 0) return;
 
                 for (uint i = 0; i < dwCount; i++)
                 {
                     int reportStart = dataOffset + (int)(i * dwSizeHid);
                     if (reportStart + (int)dwSizeHid <= size)
+                    {
+                        byte[] rawBytes = new byte[dwSizeHid];
+                        Marshal.Copy(buffer + reportStart, rawBytes, 0, (int)dwSizeHid);
+                        string hex = BitConverter.ToString(rawBytes);
+                        AppLog.Info($"Rapport HID [{i + 1}/{dwCount}] hex: {hex}");
+                        
                         ProcessHidReport(buffer, reportStart, (int)dwSizeHid);
+                    }
                 }
             }
             finally
