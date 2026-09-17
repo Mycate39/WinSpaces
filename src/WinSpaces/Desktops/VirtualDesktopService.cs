@@ -447,13 +447,13 @@ internal sealed class VirtualDesktopService : IDisposable
             if (shellInstance is IServiceProvider10 provider)
             {
                 if (build >= 26100)
-                    _w11New = TryQueryInternal<IVirtualDesktopManagerInternal24H2>(provider, "11 24H2");
+                    _w11New = TryQueryInternal<IVirtualDesktopManagerInternal24H2>(provider, "11 24H2 / 25H2 / 26H2+");
                 else if (build >= 22000)
                     _w11Last = TryQueryInternal<IVirtualDesktopManagerInternal>(provider, "11");
                 else if (build == 0)
                 {
-                    // RtlGetVersion a échoué : on tente 24H2 puis 11, puis 10.
-                    _w11New = TryQueryInternal<IVirtualDesktopManagerInternal24H2>(provider, "11 24H2 (build inconnu)");
+                    // RtlGetVersion a échoué : on tente 24H2 / 25H2 / 26H2+ puis 11, puis 10.
+                    _w11New = TryQueryInternal<IVirtualDesktopManagerInternal24H2>(provider, "11 24H2 / 25H2 / 26H2+ (build inconnu)");
                     if (_w11New is null)
                         _w11Last = TryQueryInternal<IVirtualDesktopManagerInternal>(provider, "11 (build inconnu)");
                 }
