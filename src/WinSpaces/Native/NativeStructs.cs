@@ -12,6 +12,18 @@ internal struct POINT
     public int X;
     public int Y;
 }
+[StructLayout(LayoutKind.Sequential)]
+internal struct WINDOWPLACEMENT
+{
+    public uint length;
+    public uint flags;
+    public uint showCmd;
+    public POINT ptMinPosition;
+    public POINT ptMaxPosition;
+    public RECT rcNormalPosition;
+}
+
+
 
 [StructLayout(LayoutKind.Sequential)]
 internal struct RECT

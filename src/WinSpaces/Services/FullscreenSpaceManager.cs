@@ -40,10 +40,15 @@ internal sealed class FullscreenSpaceManager : IDisposable
 
     public void Start()
     {
-        _hook.Start(WinEventConstants.EVENT_SYSTEM_FOREGROUND, WinEventConstants.EVENT_SYSTEM_FOREGROUND,
-            (_, ev, hwnd, _, _, _, _) => { if (ev == WinEventConstants.EVENT_SYSTEM_FOREGROUND) Eval(hwnd); });
+        // On écoute le changement de focus et les changements de position/taille (maximisation)
+        _hook.Start(WinEventConstants.EVENT_SYSTEM_FOREGROUND, WinEventConstants.EVENT_OBJECT_LOCATIONCHANGE,
+            (_, ev, hwnd, idObj, _, _, _) => 
+            { 
+                if (idObj == 0 && (ev == WinEventConstants.EVENT_SYSTEM_FOREGROUND || ev == WinEventConstants.EVENT_OBJECT_LOCATIONCHANGE))
+                    Eval(hwnd); 
+            });
         _poll.Start();
-        AppLog.Info("FullscreenSpaceManager démarré.");
+        AppLog.Info("FullscreenSpaceManager démarré (Plein écran & Maximisation).");
     }
 
     private void Check() => Eval(NativeMethods.GetForegroundWindow());
@@ -52,16 +57,35 @@ internal sealed class FullscreenSpaceManager : IDisposable
     {
         if (hwnd == IntPtr.Zero || !_vds.IsInternalApiAvailable) return;
 
-        if (_sessions.TryGetValue(hwnd, out var s))
+        bool currentlyIsolated = _sessions.TryGetValue(hwnd, out var s);
+        bool shouldBeIsolated = IsEligible(hwnd);
+
+        if (currentlyIsolated && !shouldBeIsolated)
         {
-            if (!IsFullscreen(hwnd)) End(s);
+            End(s!);
             return;
         }
 
-        if (!NativeMethods.IsWindowVisible(hwnd) || NativeMethods.IsIconic(hwnd)) return;
-        if (IsExcluded(hwnd) || !IsFullscreen(hwnd)) return;
-        if ((DateTime.UtcNow - _lastActionUtc).TotalMilliseconds < MinGapMs) return;
-        Begin(hwnd);
+        if (!currentlyIsolated && shouldBeIsolated)
+        {
+            // Éviter de traiter si l'action est trop récente (anti-rebond)
+            if ((DateTime.UtcNow - _lastActionUtc).TotalMilliseconds < MinGapMs) return;
+            
+            // On ne crée pas d'espace si la fenêtre est déjà "seule" ou si elle est sur un bureau qu'on ne gère pas
+            // (Note : On pourrait complexifier ici pour vérifier si le bureau actuel contient d'autres fenêtres visibles)
+            
+            Begin(hwnd);
+        }
+    }
+
+    private bool IsEligible(IntPtr hwnd)
+    {
+        if (!NativeMethods.IsWindow(hwnd) || !NativeMethods.IsWindowVisible(hwnd) || NativeMethods.IsIconic(hwnd)) 
+            return false;
+            
+        if (IsExcluded(hwnd)) return false;
+
+        return IsFullscreen(hwnd) || NativeMethods.IsZoomed(hwnd);
     }
 
     // @@FSM2@@
