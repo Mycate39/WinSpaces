@@ -2,6 +2,9 @@ using System.Runtime.InteropServices;
 using WinSpaces.Desktops;
 using WinSpaces.Native;
 using WinSpaces.Services;
+using WinSpaces.Diagnostics;
+using WinSpaces.Views;
+using WinSpaces.ViewModels;
 
 namespace WinSpaces;
 
@@ -19,7 +22,11 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
     private readonly FullscreenSpaceManager _fullscreen;
     private readonly TrayIconService _tray;
     private readonly AppOptions _options = new();
+    private readonly HealthMonitor _healthMonitor = new();
+    private MainWindow? _mainWindow;
     private bool _disposed;
+
+    public HealthMonitor HealthMonitor => _healthMonitor;
 
     public WinSpacesApplicationContext()
     {
@@ -30,11 +37,36 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
         _fullscreen = new FullscreenSpaceManager(_vds);
         _tray = new TrayIconService(_options);
 
+        // Enregistrement des composants pour le diagnostic
+        _healthMonitor.Register(_vds);
+        _healthMonitor.Register(_hotkeys);
+        _healthMonitor.Register(_gestures);
+        _healthMonitor.Register(_fullscreen);
+
         WireEvents();
         StartServices();
     }
 
     // @@CTX2@@
+
+    private void ShowDashboard()
+    {
+        if (_mainWindow == null)
+        {
+            var viewModel = new MainViewModel(_vds, _healthMonitor, _options);
+            _mainWindow = new MainWindow(viewModel);
+        }
+
+        if (_mainWindow.Visibility == System.Windows.Visibility.Visible)
+        {
+            _mainWindow.Activate();
+        }
+        else
+        {
+            _mainWindow.Show();
+            _mainWindow.Activate();
+        }
+    }
 
     private void WireEvents()
     {
@@ -49,6 +81,7 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
 
         _gestures.SpaceSwitchRequested += (_, dir) => _vds.SwitchByOffset(dir);
 
+        _tray.DashboardRequested += ShowDashboard;
         _tray.NextSpaceRequested += () => _vds.SwitchByOffset(1);
         _tray.PreviousSpaceRequested += () => _vds.SwitchByOffset(-1);
         _tray.NewSpaceRequested += () =>

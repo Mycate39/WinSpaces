@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using WinSpaces.Desktops.Interop;
 using WinSpaces.Native;
 using WinSpaces.Services;
+using WinSpaces.Diagnostics;
 
 namespace WinSpaces.Desktops;
 
@@ -10,16 +11,23 @@ namespace WinSpaces.Desktops;
 /// S'appuie sur l'API interne « explorateur » (IVirtualDesktopManagerInternal
 /// résolu via IServiceProvider10/CLSID_ImmersiveShell) et sur l'API OFFICIELLE
 /// IVirtualDesktopManager en fallback et pour les opérations par fenêtre.
-///
-/// Trois schémas COM coexistent — un seul est actif selon la version Windows :
-///  - Windows 10 1809 → 22H2 : IVirtualDesktopManagerInternal10 (IID F31574D6) ;
-///  - Windows 11 21H2 → 23H2 : IVirtualDesktopManagerInternal (IID 53F5CA0B,
-///    vtable historique, CreateDesktop en position 7) ;
-///  - Windows 11 24H2+        : IVirtualDesktopManagerInternal24H2 (même IID,
-///    vtable allongée : SwitchDesktopAndMoveForegroundView est inséré).
 /// </summary>
-internal sealed class VirtualDesktopService : IDisposable
+internal sealed class VirtualDesktopService : IDisposable, IHealthCheckable
 {
+    // IHealthCheckable Implementation
+    public string ComponentName => "Bureaux Virtuels (COM)";
+    public bool IsHealthy => IsInternalApiAvailable;
+    public string StatusMessage => GetStatusMessage();
+
+    private string GetStatusMessage()
+    {
+        if (_w11New != null) return "Windows 11 24H2+ (Interop 24H2)";
+        if (_w11Last != null) return "Windows 11 21H2-23H2 (Interop Last)";
+        if (_w10 != null) return "Windows 10 (Interop 10)";
+        if (_official != null) return "API Officielle uniquement (Fonctionnalité réduite)";
+        return "API indisponible";
+    }
+
     private IVirtualDesktopManagerInternal? _w11Last;     // Win11 ≤ 23H2
     private IVirtualDesktopManagerInternal24H2? _w11New;  // Win11 ≥ 24H2
     private IVirtualDesktopManagerInternal10? _w10;       // Windows 10

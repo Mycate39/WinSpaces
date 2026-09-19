@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using WinSpaces.Native;
+using WinSpaces.Diagnostics;
+
 
 namespace WinSpaces.Services;
 
@@ -16,8 +18,20 @@ namespace WinSpaces.Services;
 ///     d'espace (comme macOS : un seul déclenchement jusqu'au lever complet des
 ///     doigts, qui ré-arme le geste).
 /// </summary>
-internal sealed class PrecisionTouchpadWatcher : IDisposable
+internal sealed class PrecisionTouchpadWatcher : IDisposable, IHealthCheckable
 {
+    // IHealthCheckable Implementation
+    public string ComponentName => "Precision Touchpad (Raw Input HID)";
+    public bool IsHealthy => PrecisionTouchpadPresent && _preparsedData != IntPtr.Zero;
+    public string StatusMessage => GetStatusMessage();
+
+    private string GetStatusMessage()
+    {
+        if (!PrecisionTouchpadPresent) return "Aucun Precision Touchpad détecté (fallback momentum actif)";
+        if (_preparsedData == IntPtr.Zero) return "Touchpad détecté mais preparsed data non initialisée";
+        return "Touchpad opérationnel : swipe 3+ doigts actif";
+    }
+
     private const int MaxContacts = 16;
 
     /// <summary>Nombre minimal de contacts pour activer le swipe.</summary>

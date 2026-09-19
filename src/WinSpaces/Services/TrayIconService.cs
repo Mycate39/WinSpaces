@@ -19,6 +19,7 @@ internal sealed class TrayIconService : IDisposable
     public event Action? PreviousSpaceRequested;
     public event Action? NewSpaceRequested;
     public event Action? MoveWindowRequested;
+    public event Action? DashboardRequested;
     public event Action? ExitRequested;
 
     public TrayIconService(AppOptions options)
@@ -28,6 +29,8 @@ internal sealed class TrayIconService : IDisposable
         _icon.DoubleClick += (_, _) => NextSpaceRequested?.Invoke();
 
         _menu = new ContextMenuStrip();
+        _menu.Items.Add(new ToolStripMenuItem("Ouvrir Dashboard", null, (_, _) => DashboardRequested?.Invoke()) { Font = new Font(_menu.Font, FontStyle.Bold) });
+        _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add(new ToolStripMenuItem("Nouvel espace", null, (_, _) => NewSpaceRequested?.Invoke()) { ShortcutKeyDisplayString = "Ctrl+Alt+N" });
         _menu.Items.Add(new ToolStripMenuItem("Espace suivant", null, (_, _) => NextSpaceRequested?.Invoke()) { ShortcutKeyDisplayString = "Ctrl+Alt+→" });
         _menu.Items.Add(new ToolStripMenuItem("Espace précédent", null, (_, _) => PreviousSpaceRequested?.Invoke()) { ShortcutKeyDisplayString = "Ctrl+Alt+←" });

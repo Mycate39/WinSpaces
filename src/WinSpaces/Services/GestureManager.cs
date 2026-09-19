@@ -1,5 +1,7 @@
 using WinSpaces.Desktops;
 using WinSpaces.Native;
+using WinSpaces.Diagnostics;
+
 
 namespace WinSpaces.Services;
 
@@ -8,8 +10,20 @@ namespace WinSpaces.Services;
 /// universel) et PrecisionTouchpadWatcher (3/4 doigts HID, spécificité Précision
 /// Touchpad). Le mode est déterminé au démarrage selon le matériel détecté.
 /// </summary>
-internal sealed class GestureManager : IDisposable
+internal sealed class GestureManager : IDisposable, IHealthCheckable
 {
+    // IHealthCheckable Implementation
+    public string ComponentName => "Gesture Manager";
+    public bool IsHealthy => PrecisionTouchpadDetected || _momentum.MouseHook.IsInstalled;
+    public string StatusMessage => GetStatusMessage();
+
+    private string GetStatusMessage()
+    {
+        if (PrecisionTouchpadDetected) return "Mode Precision Touchpad (3/4 doigts)";
+        if (_momentum.MouseHook.IsInstalled) return "Mode Momentum (molette horizontale)";
+        return "Aucun système de geste actif";
+    }
+
     private readonly MomentumGestureDetector _momentum;
     private readonly PrecisionTouchpadWatcher _precision;
     private bool _disposed;

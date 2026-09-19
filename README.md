@@ -2,18 +2,20 @@
 
 Reproduit les **Espaces** (Spaces) de macOS sur Windows — une application **open-source** en C# / .NET 8 qui vit dans la barre des tâches, donne un bureau virtuel dédié à chaque application en plein écran et permet de basculer d'espace via gestes du trackpad et raccourcis clavier.
 
-> **Statut :** v0.1.5 — support complet de Windows 11 24H2, 25H2 et 26H2 (build 26100+), bureaux virtuels, hotkeys, momentum, gestes Précision Touchpad, et publish single-file automatisé.
+> **Statut :** v2.0.0 — support complet de Windows 11 24H2, 25H2 et 26H2 (build 26100+), bureaux virtuels, hotkeys, momentum, gestes Précision Touchpad, publish single-file automatisé, et **Dashboard WPF** avec diagnostic système intégré.
 
 ## Fonctionnalités
 
 | Fonctionnalité | Description |
 |---|---|
+| **Dashboard WPF** 🆕 | Interface graphique moderne affichant l'état de santé de tous les composants système en temps réel. Accès depuis le menu de la barre des tâches. |
+| **Diagnostic système** 🆕 | Surveillance automatique des services : API COM bureaux virtuels, hooks système, Precision Touchpad, raccourcis clavier. |
 | **Espace plein écran automatique** | Quand une app passe en plein écran, WinSpaces crée un bureau virtuel, y déplace la fenêtre et y bascule. À la sortie, l'espace est supprimé et on revient au bureau d'origine. |
 | **Gestes trackpad (momentum)** | Balayage horizontal 2 doigts / molette horizontale soutenue → changement d'espace. Fonctionne sur tous les périphériques. |
 | **Précision Touchpad (3/4 doigts)** | Sur les portables Windows 10/11 compatibles : détection automatique, balayage 3+ doigts via Raw Input HID (HidP_* indépendant du constructeur). |
 | **Raccourcis clavier** | Ctrl+Alt+Flèche droite/gauche, Ctrl+Alt+N, Ctrl+Alt+W — voir ci-dessous. |
-| **Icône de barre des tâches** | Menu contextuel : nouvel espace, suivant/précédent, déplacer fenêtre, options, quitter. |
-| **Single-file** | Publiez-vous en un seul .exe auto-contenu grâce au workflow GitHub Actions (v0.1.3+). |
+| **Icône de barre des tâches** | Menu contextuel : dashboard, nouvel espace, suivant/précédent, déplacer fenêtre, options, quitter. |
+| **Single-file** | Publiez-vous en un seul .exe auto-contenu grâce au workflow GitHub Actions. |
 
 ## Raccourcis
 
