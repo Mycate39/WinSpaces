@@ -12,10 +12,16 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
-    <Version>2.0.0</Version>
+    <Version>2.5.0</Version>
     <Authors>WinSpaces contributors</Authors>
     <Description>macOS Spaces pour Windows — bureaux virtuels avec plein écran auto, gestes trackpad et dashboard WPF</Description>
     <Platforms>x64</Platforms>
   </PropertyGroup>
+
+  <!-- Spotlight Module Dependencies -->
+  <ItemGroup>
+    <PackageReference Include="Lucene.Net" Version="4.8.0" />
+    <PackageReference Include="NCalc" Version="3.7.2" />
+  </ItemGroup>
 
 </Project>
