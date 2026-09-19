@@ -3,6 +3,7 @@ bin/
 obj/
 artifacts/
 publish/
+publish-dir/
 
 # IDE
 .vs/
