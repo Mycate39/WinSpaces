@@ -58,11 +58,11 @@ internal static class NativeMethods
     internal static extern bool IsWindowVisible(IntPtr hWnd);
 
     [DllImport(User32, SetLastError = true)]
-    [DllImport(User32, SetLastError = true)]
     internal static extern bool IsIconic(IntPtr hWnd);
 
-
+    [DllImport(User32, SetLastError = true)]
     internal static extern bool IsZoomed(IntPtr hWnd);
+
 
     [DllImport(User32, SetLastError = true)]
     internal static extern bool GetWindowPlacement(IntPtr hWnd, ref WINDOWPLACEMENT lpwndpl);
