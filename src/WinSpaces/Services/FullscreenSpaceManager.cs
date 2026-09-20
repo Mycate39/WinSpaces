@@ -13,12 +13,12 @@ namespace WinSpaces.Services;
 /// leur crée un bureau virtuel dédié et y bascule. À la sortie du plein écran,
 /// supprime l'espace dédié et revient à l'espace d'origine.
 /// </summary>
-internal sealed class FullscreenSpaceManager : IDisposable, IHealthCheckable
+internal sealed class FullscreenSpaceManager : HealthCheckableBase, IDisposable
 {
     // IHealthCheckable Implementation
-    public string ComponentName => "Fullscreen & Maximized Manager";
-    public bool IsHealthy => _hook.IsActive;
-    public string StatusMessage => _hook.IsActive ? "Actif : hook événements système opérationnel" : "Inactif : hook non initialisé";
+    public override string ComponentName => "Fullscreen & Maximized Manager";
+    public override bool IsHealthy => _hook.IsActive;
+    public override string StatusMessage => _hook.IsActive ? "Actif : hook événements système opérationnel" : "Inactif : hook non initialisé";
     private const int PollMs = 600;
     private const int MinGapMs = 1100;
     private const int GeoTol = 6;

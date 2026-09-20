@@ -4,7 +4,7 @@ namespace WinSpaces.Services;
 /// Options applicatives exposées au menu de la barre des tâches et lues par
 /// les services au fil de l'eau (démarrage en mémoire pour cette v0.1).
 /// </summary>
-internal sealed class AppOptions
+public sealed class AppOptions
 {
     /// <summary>Espace dédié automatique quand une app passe en plein écran.</summary>
     public bool FullscreenSpacesEnabled { get; set; } = true;

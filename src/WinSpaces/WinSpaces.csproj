@@ -22,6 +22,7 @@
   <ItemGroup>
     <PackageReference Include="Lucene.Net" Version="4.8.0-beta00018" />
     <PackageReference Include="NCalc" Version="6.2.0" />
+    <PackageReference Include="System.Management" Version="8.0.0" />
   </ItemGroup>
 
 </Project>
