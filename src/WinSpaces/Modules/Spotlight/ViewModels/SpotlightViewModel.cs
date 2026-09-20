@@ -103,7 +103,7 @@ public sealed class SpotlightViewModel : ViewModelBase
         }
 
         OnPropertyChanged(nameof(Results));
-
+    }
 
     private void ExecuteSelected()
     {
@@ -209,4 +209,3 @@ public class RelayCommand : ICommand
     public void Execute(object? parameter) => _execute();
 }
 
-    }
