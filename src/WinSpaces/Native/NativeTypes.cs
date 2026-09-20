@@ -36,6 +36,7 @@ internal static class KeyboardKeys
     public const uint VK_DOWN = 0x28;
     public const uint VK_N = 0x4E;
     public const uint VK_W = 0x57;
+    public const uint VK_SPACE = 0x20;
 
     public const uint MOD_ALT = 0x0001;
     public const uint MOD_CONTROL = 0x0002;
