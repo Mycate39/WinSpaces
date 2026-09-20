@@ -12,7 +12,7 @@ namespace WinSpaces.Desktops;
 /// résolu via IServiceProvider10/CLSID_ImmersiveShell) et sur l'API OFFICIELLE
 /// IVirtualDesktopManager en fallback et pour les opérations par fenêtre.
 /// </summary>
-internal sealed class VirtualDesktopService : HealthCheckableBase, IDisposable
+public sealed class VirtualDesktopService : HealthCheckableBase, IDisposable
 {
     // IHealthCheckable Implementation
     public override string ComponentName => "Bureaux Virtuels (COM)";

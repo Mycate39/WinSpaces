@@ -15,9 +15,11 @@ internal sealed class GlobalHotkeyManager : HealthCheckableBase, IDisposable
     private readonly Dictionary<int, Action> _handlers = new();
     private int _nextId = 0xB01;
 
+    private string _statusMessage = "Actif : 0 raccourcis enregistrés";
+
     public override string ComponentName => "Global Hotkey Manager";
     public override bool IsHealthy => _handlers.Count > 0;
-    public override string StatusMessage { get; protected set; } = "Actif : 0 raccourcis enregistrés";
+    public override string StatusMessage => _statusMessage;
 
     public GlobalHotkeyManager(MessageWindow window)
     {
@@ -40,7 +42,7 @@ internal sealed class GlobalHotkeyManager : HealthCheckableBase, IDisposable
 
     private void UpdateStatus()
     {
-        StatusMessage = $"Actif : {_handlers.Count} raccourcis enregistrés";
+        _statusMessage = $"Actif : {_handlers.Count} raccourcis enregistrés";
         SetMetric("registered_count", _handlers.Count);
         UpdateLastCheck();
     }

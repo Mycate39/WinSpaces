@@ -18,12 +18,12 @@ namespace WinSpaces.Services;
 ///     d'espace (comme macOS : un seul déclenchement jusqu'au lever complet des
 ///     doigts, qui ré-arme le geste).
 /// </summary>
-internal sealed class PrecisionTouchpadWatcher : IDisposable, IHealthCheckable
+internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposable
 {
     // IHealthCheckable Implementation
-    public string ComponentName => "Precision Touchpad (Raw Input HID)";
-    public bool IsHealthy => PrecisionTouchpadPresent && _preparsedData != IntPtr.Zero;
-    public string StatusMessage => GetStatusMessage();
+    public override string ComponentName => "Precision Touchpad (Raw Input HID)";
+    public override bool IsHealthy => PrecisionTouchpadPresent && _preparsedData != IntPtr.Zero;
+    public override string StatusMessage => GetStatusMessage();
 
     private string GetStatusMessage()
     {

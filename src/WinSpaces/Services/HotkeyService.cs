@@ -11,12 +11,12 @@ namespace WinSpaces.Services;
 /// Raccourcis globaux via RegisterHotKey (aucune injection, aucune interception :
 /// le système notifie WM_HOTKEY sur notre fenêtre message-only).
 /// </summary>
-internal sealed class HotkeyService : IDisposable, IHealthCheckable
+internal sealed class HotkeyService : HealthCheckableBase, IDisposable
 {
     // IHealthCheckable Implementation
-    public string ComponentName => "Hotkey Service (Global Shortcuts)";
-    public bool IsHealthy => _registeredIds.Count >= 4;
-    public string StatusMessage => $"{_registeredIds.Count}/4 raccourcis enregistrés";
+    public override string ComponentName => "Hotkey Service (Global Shortcuts)";
+    public override bool IsHealthy => _registeredIds.Count >= 4;
+    public override string StatusMessage => $"{_registeredIds.Count}/4 raccourcis enregistrés";
 
     public const int IdNextSpace = 0xB01;
     public const int IdPreviousSpace = 0xB02;

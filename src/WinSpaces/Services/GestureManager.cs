@@ -10,12 +10,12 @@ namespace WinSpaces.Services;
 /// universel) et PrecisionTouchpadWatcher (3/4 doigts HID, spécificité Précision
 /// Touchpad). Le mode est déterminé au démarrage selon le matériel détecté.
 /// </summary>
-internal sealed class GestureManager : IDisposable, IHealthCheckable
+internal sealed class GestureManager : HealthCheckableBase, IDisposable
 {
     // IHealthCheckable Implementation
-    public string ComponentName => "Gesture Manager";
-    public bool IsHealthy => PrecisionTouchpadDetected || _momentum.MouseHook.IsInstalled;
-    public string StatusMessage => GetStatusMessage();
+    public override string ComponentName => "Gesture Manager";
+    public override bool IsHealthy => PrecisionTouchpadDetected || _momentum.MouseHook.IsInstalled;
+    public override string StatusMessage => GetStatusMessage();
 
     private string GetStatusMessage()
     {
