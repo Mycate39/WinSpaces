@@ -31,7 +31,7 @@ public sealed class CalculatorEngine : HealthCheckableBase
 
         try
         {
-            var expr = new Expression(expression, ExpressionOptions.IgnoreCase);
+            var expr = new Expression(expression);
             var result = expr.Evaluate();
             
             if (result == null) return null;
