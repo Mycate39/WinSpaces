@@ -60,7 +60,7 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
         _vds = new VirtualDesktopService();
         _msgWindow = new MessageWindow();
         _configurationService = new ConfigurationService();
-        _widgetManager = new WidgetManager(_configurationService.Current.WidgetsConfig);
+        _widgetManager = new WidgetManager();
         _themeEngine = new ThemeEngine();
         _wallpaperMonitor = new WallpaperMonitor();
 

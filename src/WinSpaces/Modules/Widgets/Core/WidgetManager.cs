@@ -1,5 +1,7 @@
+using System.IO;
 using System.Text.Json;
 using WinSpaces.Diagnostics;
+using WinSpaces.Services;
 
 namespace WinSpaces.Modules.Widgets.Core;
 

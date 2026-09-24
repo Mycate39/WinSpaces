@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using WinSpaces.Modules.Widgets.Core;
+using WinSpaces.Services;
 
 namespace WinSpaces.Modules.Widgets.BuiltIn;
 

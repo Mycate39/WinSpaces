@@ -1,4 +1,5 @@
 using WinSpaces.Diagnostics;
+using WinSpaces.Services;
 
 namespace WinSpaces.Modules.MenuBar.Services;
 

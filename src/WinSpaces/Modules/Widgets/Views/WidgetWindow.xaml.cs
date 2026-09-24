@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using WinSpaces.Modules.Widgets.Core;
 using WinSpaces.Modules.Widgets.ViewModels;
+using WinSpaces.Services;
 using UserControl = System.Windows.Controls.UserControl;
 
 namespace WinSpaces.Modules.Widgets.Views;
