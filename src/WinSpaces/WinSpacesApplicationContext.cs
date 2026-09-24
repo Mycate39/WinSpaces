@@ -217,52 +217,7 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
             "Ctrl+Alt+←/→ pour changer d'espace | Alt+Espace pour Spotlight");
     }
 
-    private void ShowMenuBar()
-    {
-        if (_menuBarWindow == null)
-        {
-            var viewModel = new MenuBarViewModel(_menuBarService);
-            _menuBarWindow = new MenuBarWindow(viewModel);
-        }
-        _menuBarWindow.Show();
-    }
-
-    private void ShowDashboard()
-    {
-        if (_mainWindow == null)
-        {
-            var viewModel = new MainViewModel(_vds, _healthMonitor, _options);
-            _mainWindow = new MainWindow(viewModel);
-        }
-
-        if (_mainWindow.Visibility == System.Windows.Visibility.Visible)
-        {
-            _mainWindow.Activate();
-        }
-        else
-        {
-            _mainWindow.Show();
-            _mainWindow.Activate();
-        }
-    }
-
-    private void ToggleSpotlight()
-    {
-        if (_spotlightWindow == null)
-        {
-            var viewModel = new SpotlightViewModel(_spotlightService);
-            _spotlightWindow = new SpotlightWindow(viewModel);
-        }
-
-        if (_spotlightWindow.IsVisible)
-        {
-            _spotlightWindow.HideWindow();
-        }
-        else
-        {
-            _spotlightWindow.ShowSpotlight();
-        }
-    }
+    
 
     private void MoveForegroundWindowToNextDesktop()
     {

@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Input;
 using WinSpaces.Modules.Spotlight.ViewModels;
+using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 
 namespace WinSpaces.Modules.Spotlight.Views;
 
