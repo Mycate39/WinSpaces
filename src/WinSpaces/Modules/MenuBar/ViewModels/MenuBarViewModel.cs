@@ -1,5 +1,6 @@
 using System.Windows.Input;
 using WinSpaces.Modules.MenuBar.Services;
+using WinSpaces.Services;
 using WinSpaces.ViewModels;
 
 namespace WinSpaces.Modules.MenuBar.ViewModels;

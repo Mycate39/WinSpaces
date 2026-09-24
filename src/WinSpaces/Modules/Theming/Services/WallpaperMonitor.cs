@@ -1,6 +1,7 @@
 using System;
 using Microsoft.Win32;
 using WinSpaces.Diagnostics;
+using WinSpaces.Services;
 
 namespace WinSpaces.Modules.Theming.Services;
 

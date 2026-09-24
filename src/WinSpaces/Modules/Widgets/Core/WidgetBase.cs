@@ -1,4 +1,5 @@
 using System.Windows.Threading;
+using WinSpaces.Services;
 
 namespace WinSpaces.Modules.Widgets.Core;
 

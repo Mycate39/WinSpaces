@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Interop;
 using WinSpaces.Modules.MenuBar.ViewModels;
+using WinSpaces.Services;
 
 namespace WinSpaces.Modules.MenuBar.Views;
 
