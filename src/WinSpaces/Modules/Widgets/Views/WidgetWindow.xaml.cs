@@ -118,14 +118,14 @@ public partial class WidgetWindow : Window
     private UserControl CreateClockContent()
     {
         var widget = (Modules.Widgets.BuiltIn.ClockWidget)_widget;
-        var stack = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
+        var stack = new StackPanel { HorizontalAlignment = System.Windows.HorizontalAlignment.Center };
 
         var timeText = new TextBlock
         {
             FontSize = 32,
             FontWeight = FontWeights.Bold,
             Foreground = System.Windows.Media.Brushes.DarkSlateGray,
-            HorizontalAlignment = HorizontalAlignment.Center
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center
         };
         timeText.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding("TimeString") { Source = widget });
 
@@ -133,7 +133,7 @@ public partial class WidgetWindow : Window
         {
             FontSize = 11,
             Foreground = System.Windows.Media.Brushes.Gray,
-            HorizontalAlignment = HorizontalAlignment.Center,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
             Margin = new Thickness(0, 5, 0, 0)
         };
         dateText.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding("DateString") { Source = widget });
@@ -149,14 +149,14 @@ public partial class WidgetWindow : Window
         var widget = (Modules.Widgets.BuiltIn.CalendarWidget)_widget;
         var stack = new StackPanel();
 
-        var title = new TextBlock { Style = (Style)FindResource("WidgetTitleStyle"), HorizontalAlignment = HorizontalAlignment.Center };
+        var title = new TextBlock { Style = (Style)FindResource("WidgetTitleStyle"), HorizontalAlignment = System.Windows.HorizontalAlignment.Center };
         title.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding("MonthYear") { Source = widget });
 
         var content = new TextBlock
         {
             Text = $"Aujourd'hui : {widget.CurrentDay}",
             Style = (Style)FindResource("WidgetContentStyle"),
-            HorizontalAlignment = HorizontalAlignment.Center,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
             Margin = new Thickness(0, 10, 0, 0)
         };
 
@@ -170,14 +170,14 @@ public partial class WidgetWindow : Window
         var widget = (Modules.Widgets.BuiltIn.WeatherWidget)_widget;
         var stack = new StackPanel();
 
-        var title = new TextBlock { Text = widget.Location, Style = (Style)FindResource("WidgetTitleStyle"), HorizontalAlignment = HorizontalAlignment.Center };
-        var icon = new TextBlock { FontSize = 48, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 10, 0, 10) };
+        var title = new TextBlock { Text = widget.Location, Style = (Style)FindResource("WidgetTitleStyle"), HorizontalAlignment = System.Windows.HorizontalAlignment.Center };
+        var icon = new TextBlock { FontSize = 48, HorizontalAlignment = System.Windows.HorizontalAlignment.Center, Margin = new Thickness(0, 10, 0, 10) };
         icon.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding("Icon") { Source = widget });
 
-        var temp = new TextBlock { FontSize = 24, FontWeight = FontWeights.Bold, HorizontalAlignment = HorizontalAlignment.Center };
+        var temp = new TextBlock { FontSize = 24, FontWeight = FontWeights.Bold, HorizontalAlignment = System.Windows.HorizontalAlignment.Center };
         temp.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding("Temperature") { StringFormat = "{0}°C", Source = widget });
 
-        var condition = new TextBlock { Style = (Style)FindResource("WidgetContentStyle"), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 5, 0, 0) };
+        var condition = new TextBlock { Style = (Style)FindResource("WidgetContentStyle"), HorizontalAlignment = System.Windows.HorizontalAlignment.Center, Margin = new Thickness(0, 5, 0, 0) };
         condition.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding("Condition") { Source = widget });
 
         stack.Children.Add(title);
