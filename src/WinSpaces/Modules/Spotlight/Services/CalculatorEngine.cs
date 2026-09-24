@@ -31,17 +31,7 @@ public sealed class CalculatorEngine : HealthCheckableBase
 
         try
         {
-            var expr = new Expression(expression, EvaluateOptions.IgnoreCase);
-            
-            // Ajouter des fonctions communes
-            expr.EvaluateFunction += (name, args) =>
-            {
-                if (name.ToLower() == "sqrt" && args.Parameters.Length == 1)
-                {
-                    args.Result = Math.Sqrt(Convert.ToDouble(args.Parameters[0].Evaluate()));
-                }
-            };
-
+            var expr = new Expression(expression, ExpressionOptions.IgnoreCase);
             var result = expr.Evaluate();
             
             if (result == null) return null;
