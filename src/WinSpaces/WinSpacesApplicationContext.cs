@@ -213,8 +213,56 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
         _menuBarService.Start();
         ShowMenuBar();
         
-        _tray.ShowInfo("WinSpaces v2.3.0",
+        _tray.ShowInfo("WinSpaces v2.5.3",
             "Ctrl+Alt+←/→ pour changer d'espace | Alt+Espace pour Spotlight");
+    }
+
+    private void ShowDashboard()
+    {
+        if (_mainWindow == null || !_mainWindow.IsLoaded)
+        {
+            var vm = new MainViewModel(_vds, _healthMonitor);
+            _mainWindow = new MainWindow(vm);
+            _mainWindow.Closed += (_, _) => _mainWindow = null;
+        }
+
+        _mainWindow.Show();
+        _mainWindow.Activate();
+    }
+
+    private void ShowMenuBar()
+    {
+        if (_menuBarWindow == null || !_menuBarWindow.IsLoaded)
+        {
+            var vm = new MenuBarViewModel(_menuBarService);
+            _menuBarWindow = new MenuBarWindow(vm);
+            _menuBarWindow.Closed += (_, _) =>
+            {
+                vm.Dispose();
+                _menuBarWindow = null;
+            };
+        }
+
+        _menuBarWindow.Show();
+    }
+
+    private void ToggleSpotlight()
+    {
+        if (_spotlightWindow == null || !_spotlightWindow.IsLoaded)
+        {
+            var vm = new SpotlightViewModel(_spotlightService);
+            _spotlightWindow = new SpotlightWindow(vm);
+            _spotlightWindow.Closed += (_, _) => _spotlightWindow = null;
+        }
+
+        if (_spotlightWindow.IsVisible)
+        {
+            _spotlightWindow.HideWindow();
+        }
+        else
+        {
+            _spotlightWindow.ShowSpotlight();
+        }
     }
 
     
@@ -234,16 +282,45 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
 
     private void ExitApplication()
     {
+        if (_disposed) return;
+        _disposed = true;
+
         try
         {
             _widgetManager.SaveStateAndCloseAll();
+
+            if (_menuBarWindow != null)
+            {
+                _menuBarWindow.Close();
+                _menuBarWindow = null;
+            }
+
+            if (_spotlightWindow != null)
+            {
+                _spotlightWindow.Close();
+                _spotlightWindow = null;
+            }
+
+            if (_mainWindow != null)
+            {
+                _mainWindow.Close();
+                _mainWindow = null;
+            }
+
+            _spotlightService.Dispose();
             _menuBarService.Dispose();
+            _wallpaperMonitor.Dispose();
+            _globalHotkeys.Dispose();
             _tray.Dispose();
             _fullscreen.Dispose();
             _gestures.Dispose();
             _hotkeys.Dispose();
             _vds.Dispose();
             _msgWindow.DestroyHandle();
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error(ex);
         }
         finally
         {

@@ -1,3 +1,4 @@
+using System;
 using System.Windows.Input;
 using WinSpaces.Modules.MenuBar.Services;
 using WinSpaces.Services;
@@ -9,10 +10,11 @@ namespace WinSpaces.Modules.MenuBar.ViewModels;
 /// ViewModel pour la barre de menu système.
 /// Gère l'affichage des indicateurs et les interactions utilisateur.
 /// </summary>
-public sealed class MenuBarViewModel : ViewModelBase
+public sealed class MenuBarViewModel : ViewModelBase, IDisposable
 {
     private readonly MenuBarService _service;
     private readonly SystemMonitorService _monitor;
+    private bool _disposed;
 
     // Propriétés observables pour le binding
     public int BatteryLevel => _monitor.BatteryLevel;
@@ -120,6 +122,14 @@ public sealed class MenuBarViewModel : ViewModelBase
         {
             AppLog.Error(ex);
         }
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+
+        _monitor.SystemStateChanged -= OnSystemStateChanged;
     }
 }
 
