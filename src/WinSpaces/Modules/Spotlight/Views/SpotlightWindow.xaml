@@ -20,13 +20,13 @@
         <!-- Style pour le champ de recherche -->
         <Style x:Key="SearchBoxStyle" TargetType="TextBox">
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="#E0E0E0"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="FontSize" Value="24"/>
             <Setter Property="FontWeight" Value="Light"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
             <Setter Property="Padding" Value="20,0"/>
-            <Setter Property="CaretBrush" Value="#4A90E2"/>
+            <Setter Property="CaretBrush" Value="{DynamicResource AccentBrush}"/>
         </Style>
 
         <!-- Style pour les résultats -->
@@ -39,7 +39,7 @@
                     <ControlTemplate TargetType="ListBoxItem">
                         <Border Background="{TemplateBinding Background}" 
                                 Padding="{TemplateBinding Padding}"
-                                CornerRadius="8">
+                                CornerRadius="{StaticResource CornerRadiusSmall}">
                             <ContentPresenter/>
                         </Border>
                     </ControlTemplate>
@@ -47,20 +47,20 @@
             </Setter>
             <Style.Triggers>
                 <Trigger Property="IsSelected" Value="True">
-                    <Setter Property="Background" Value="#4A90E2"/>
+                    <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
                 </Trigger>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#3A7AC2"/>
+                    <Setter Property="Background" Value="{DynamicResource AccentHoverBrush}"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
     </Window.Resources>
 
     <!-- Conteneur principal avec effet Acrylic -->
-    <Border Background="#CC1E1E1E" 
-            CornerRadius="12" 
-            BorderBrush="#3A3A3A" 
-            BorderThickness="1">
+    <Border Background="{DynamicResource CardBackground}" 
+            CornerRadius="{StaticResource CornerRadiusMedium}" 
+            BorderBrush="{DynamicResource BorderColor}"
+            BorderThickness="{StaticResource BorderThicknessThin}">
         <Border.Effect>
             <DropShadowEffect Color="Black" BlurRadius="30" ShadowDepth="0" Opacity="0.7"/>
         </Border.Effect>
@@ -109,11 +109,11 @@
                                 <TextBlock Text="{Binding Title}" 
                                            FontSize="16" 
                                            FontWeight="SemiBold"
-                                           Foreground="#E0E0E0"
+                                           Foreground="{DynamicResource TextPrimary}"
                                            TextTrimming="CharacterEllipsis"/>
                                 <TextBlock Text="{Binding Subtitle}" 
                                            FontSize="12" 
-                                           Foreground="#A0A0A0"
+                                           Foreground="{DynamicResource TextSecondary}"
                                            TextTrimming="CharacterEllipsis"
                                            Margin="0,2,0,0"/>
                             </StackPanel>

@@ -13,11 +13,11 @@
     <Window.Resources>
         <!-- Style pour le conteneur du widget -->
         <Style x:Key="WidgetContainerStyle" TargetType="Border">
-            <Setter Property="Background" Value="#E0FFFFFF"/>
-            <Setter Property="BorderBrush" Value="#40000000"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="12"/>
-            <Setter Property="Padding" Value="15"/>
+            <Setter Property="Background" Value="{DynamicResource CardBackground}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderColor}"/>
+            <Setter Property="BorderThickness" Value="{StaticResource BorderThicknessThin}"/>
+            <Setter Property="CornerRadius" Value="{StaticResource CornerRadiusMedium}"/>
+            <Setter Property="Padding" Value="{StaticResource PaddingMedium}"/>
             <Setter Property="Effect">
                 <Setter.Value>
                     <DropShadowEffect Color="Black" 
@@ -33,14 +33,14 @@
         <Style x:Key="WidgetTitleStyle" TargetType="TextBlock">
             <Setter Property="FontSize" Value="14"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Foreground" Value="#2C3E50"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
             <Setter Property="Margin" Value="0,0,0,10"/>
         </Style>
 
         <!-- Style pour le contenu du widget -->
         <Style x:Key="WidgetContentStyle" TargetType="TextBlock">
             <Setter Property="FontSize" Value="12"/>
-            <Setter Property="Foreground" Value="#34495E"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
             <Setter Property="TextWrapping" Value="Wrap"/>
         </Style>
     </Window.Resources>

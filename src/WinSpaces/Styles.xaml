@@ -1,0 +1,138 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:system="clr-namespace:System;assembly=mscorlib">
+    
+    #region Couleurs - Palette macOS Tahoe / Liquid Glass
+    <!-- Mode Clair -->
+    <Color x:Key="LightWindowColor">#FFFFFFFF</Color>
+    <Color x:Key="LightWindowColorTransparent">#F5FFFFFF</Color>
+    <Color x:Key="LightCardColor">#FFFFFFFF</Color>
+    <Color x:Key="LightCardColorTransparent">#F0FFFFFF</Color>
+    <Color x:Key="LightBorderColor">#E5E5E5</Color>
+    <Color x:Key="LightTextPrimary">#1C1C1E</Color>
+    <Color x:Key="LightTextSecondary">#6E6E73</Color>
+    <Color x:Key="LightAccent">#007AFF</Color>
+    <Color x:Key="LightAccentTransparent">#33007AFF</Color>
+    <Color x:Key="LightAccentHover">#339AFF</Color>
+    <Color x:Key="DarkAccentHover">#335BBF</Color>
+    
+    <!-- Mode Sombre -->
+    <Color x:Key="DarkWindowColor">#FF1C1C1E</Color>
+    <Color x:Key="DarkWindowColorTransparent">#F51C1C1E</Color>
+    <Color x:Key="DarkCardColor">#FF2C2C2E</Color>
+    <Color x:Key="DarkCardColorTransparent">#F02C2C2E</Color>
+    <Color x:Key="DarkBorderColor">#FF38383A</Color>
+    <Color x:Key="DarkTextPrimary">#FFFFFF</Color>
+    <Color x:Key="DarkTextSecondary">#E5E5E7</Color>
+    <Color x:Key="DarkAccent">#0A84FF</Color>
+    <Color x:Key="DarkAccentTransparent">#330A84FF</Color>
+    
+    #endregion
+    
+    #region Rayon d'arrondi
+    <system:Double x:Key="CornerRadiusExtraSmall">2</system:Double>
+    <system:Double x:Key="CornerRadiusSmall">8</system:Double>
+    <system:Double x:Key="CornerRadiusMedium">12</system:Double>
+    <system:Double x:Key="CornerRadiusLarge">16</system:Double>
+    <system:Double x:Key="CornerRadiusExtraLarge">20</system:Double>
+    #endregion
+    
+    #region Épaisseurs
+    <Thickness x:Key="BorderThicknessThin">0.5</Thickness>
+    <Thickness x:Key="BorderThicknessNormal">1</Thickness>
+    <Thickness x:Key="PaddingSmall">8</Thickness>
+    <Thickness x:Key="PaddingMedium">12</Thickness>
+    <Thickness x:Key="PaddingLarge">16</Thickness>
+    #endregion
+    
+    #region Styles de base
+    <!-- Style pour les cartes (fenêtres, panneaux, etc.) -->
+    <Style x:Key="CardStyle" TargetType="Border">
+        <Setter Property="CornerRadius" Value="{StaticResource CornerRadiusLarge}"/>
+        <Setter Property="BorderThickness" Value="{StaticResource BorderThicknessThin}"/>
+        <Setter Property="Padding" Value="{StaticResource PaddingMedium}"/>
+        <Setter Property="Background" Value="{DynamicResource CardBackground}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderColor}"/>
+    </Style>
+    
+    <!-- Style pour les cartes compactes -->
+    <Style x:Key="CompactCardStyle" TargetType="Border">
+        <Setter Property="CornerRadius" Value="{StaticResource CornerRadiusMedium}"/>
+        <Setter Property="BorderThickness" Value="{StaticResource BorderThicknessThin}"/>
+        <Setter Property="Padding" Value="{StaticResource PaddingSmall}"/>
+        <Setter Property="Background" Value="{DynamicResource CardBackground}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderColor}"/>
+    </Style>
+    
+    <!-- Style pour les sections de titre -->
+    <Style x:Key="SectionTitleStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="16"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+        <Setter Property="Margin" Value="0,0,0,8"/>
+    </Style>
+    
+    <!-- Style pour le texte secondaire -->
+    <Style x:Key="SecondaryTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
+    </Style>
+    
+    <!-- Style pour les boutons -->
+    <Style x:Key="ModernButtonStyle" TargetType="Button">
+        <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
+        <Setter Property="Foreground" Value="White"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="{StaticResource PaddingSmall}"/>
+        <Setter Property="CornerRadius" Value="{StaticResource CornerRadiusMedium}"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="FontWeight" Value="Medium"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="MinHeight" Value="32"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border Background="{TemplateBinding Background}"
+                            CornerRadius="{TemplateBinding CornerRadius}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            BorderBrush="{TemplateBinding BorderBrush}">
+                        <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Opacity" Value="0.9"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter Property="Opacity" Value="0.8"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.5"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    
+    <!-- Style pour les boutons secondaires -->
+    <Style x:Key="SecondaryButtonStyle" TargetType="Button" BasedOn="{StaticResource ModernButtonStyle}">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderColor}"/>
+        <Setter Property="BorderThickness" Value="{StaticResource BorderThicknessThin}"/>
+    </Style>
+    #endregion
+
+    #region Ressources dynamiques pour le thème
+    <!-- Ces ressources seront swapées par le ThemeEngine -->
+    <SolidColorBrush x:Key="WindowBackground" Color="{StaticResource LightWindowColor}"/>
+    <SolidColorBrush x:Key="CardBackground" Color="{StaticResource LightCardColor}"/>
+    <SolidColorBrush x:Key="BorderColor" Color="{StaticResource LightBorderColor}"/>
+    <SolidColorBrush x:Key="TextPrimary" Color="{StaticResource LightTextPrimary}"/>
+<SolidColorBrush x:Key="AccentHoverBrush" Color="{StaticResource LightAccentHover}"/>
+    <SolidColorBrush x:Key="TextSecondary" Color="{StaticResource LightTextSecondary}"/>
+    <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource LightAccent}"/>
+    #endregion
