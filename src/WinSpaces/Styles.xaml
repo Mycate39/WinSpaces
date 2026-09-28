@@ -46,13 +46,15 @@
     <!-- /Épaisseurs -->
 
     <!-- Styles de base -->
+    <!-- Style pour les cartes (fenêtres, panneaux, etc.) -->
+    <Style x:Key="CardStyle" TargetType="Border">
         <Setter Property="CornerRadius" Value="{StaticResource CornerRadiusLarge}"/>
         <Setter Property="BorderThickness" Value="{StaticResource BorderThicknessThin}"/>
         <Setter Property="Padding" Value="{StaticResource PaddingMedium}"/>
         <Setter Property="Background" Value="{DynamicResource CardBackground}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource BorderColor}"/>
     </Style>
-    
+
     <!-- Style pour les cartes compactes -->
     <Style x:Key="CompactCardStyle" TargetType="Border">
         <Setter Property="CornerRadius" Value="{StaticResource CornerRadiusMedium}"/>
