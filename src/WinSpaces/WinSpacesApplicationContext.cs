@@ -176,7 +176,7 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
     {
         if (_mainWindow == null || !_mainWindow.IsLoaded)
         {
-            var vm = new MainViewModel(_vds, _healthMonitor);
+            var vm = new MainViewModel(_vds, _healthMonitor, _options);
             _mainWindow = new MainWindow(vm);
             _mainWindow.Closed += (_, _) => _mainWindow = null;
         }
@@ -242,6 +242,9 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
 
         try
         {
+            // Arrêter les services de premier plan avant de fermer les fenêtres
+            _wallpaperMonitor.Dispose();
+            _menuBarService.Stop();
             _widgetManager.SaveStateAndCloseAll();
 
             if (_menuBarWindow != null)
@@ -264,7 +267,6 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
 
             _spotlightService.Dispose();
             _menuBarService.Dispose();
-            _wallpaperMonitor.Dispose();
             _globalHotkeys.Dispose();
             _tray.Dispose();
             _fullscreen.Dispose();
