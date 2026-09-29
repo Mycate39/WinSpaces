@@ -27,11 +27,19 @@ internal sealed class GestureManager : HealthCheckableBase, IDisposable
     private readonly MomentumGestureDetector _momentum;
     private readonly PrecisionTouchpadWatcher _precision;
     private bool _disposed;
+    private readonly ConfigurationService _configService;
 
-    public GestureManager(MessageWindow window, VirtualDesktopService desktops)
+    public GestureManager(MessageWindow window, VirtualDesktopService desktops, ConfigurationService configService)
     {
         _momentum = new MomentumGestureDetector();
         _precision = new PrecisionTouchpadWatcher(window);
+        _configService = configService;
+        
+        // S'abonner aux changements de configuration pour hot-reload
+        _configService.ConfigurationChanged += OnConfigurationChanged;
+        
+        // Appliquer la configuration initiale
+        ApplyGestureConfiguration(_configService.Current.Gestures);
     }
 
     /// <summary>Vrai si le Précision Touchpad a été trouvé à l'initialisation.</summary>
@@ -63,7 +71,33 @@ internal sealed class GestureManager : HealthCheckableBase, IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        
+        // Se désabonner des événements de configuration
+        if (_configService != null)
+            _configService.ConfigurationChanged -= OnConfigurationChanged;
+        
         _momentum.Dispose();
         _precision.Dispose();
+    }
+
+    /// <summary>Applique la configuration des gestes aux détecteurs.</summary>
+    private void ApplyGestureConfiguration(GestureConfig config)
+    {
+        if (config == null) return;
+        
+        // Configurer le Precision Touchpad Watcher
+        _precision.Configure(config);
+        
+        // Configurer le Momentum Gesture Detector (fallback)
+        _momentum.Configure(config);
+        
+        AppLog.Info($"Configuration des gestes appliquée : Enabled={config.Enabled}");
+    }
+
+    /// <summary>Gestionnaire d'événement pour les changements de configuration (hot-reload).</summary>
+    private void OnConfigurationChanged(object? sender, WinSpaces.Configuration e)
+    {
+        // Appliquer uniquement la section gestes de la nouvelle configuration
+        ApplyGestureConfiguration(e.Gestures);
     }
 }

@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:converters="clr-namespace:WinSpaces.Converters"
         xmlns:system="clr-namespace:System;assembly=mscorlib"
+        xmlns:sys="clr-namespace:System;assembly=mscorlib"
         Title="WinSpaces — Dashboard" 
         Height="600" 
         Width="900"
@@ -10,7 +11,8 @@
         Background="{DynamicResource WindowBackground}"
         AllowsTransparency="True"
         WindowStyle="None"
-        ResizeMode="CanResizeWithGrip">
+        ResizeMode="CanResizeWithGrip"
+        AutomationProperties.Name="WinSpaces Dashboard">
 
     <Window.Resources>
         <ResourceDictionary>

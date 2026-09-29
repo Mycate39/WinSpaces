@@ -21,6 +21,9 @@ public class WinSpacesConfiguration
     /// <summary>Configuration du module Thématisation.</summary>
     public ThemeConfig Theme { get; set; } = new();
 
+    /// <summary>Configuration des gestes (trackpad / souris).</summary>
+    public GestureConfig Gestures { get; set; } = new();
+
     /// <summary>Configuration globale de l'application.</summary>
     public GlobalConfig Global { get; set; } = new();
 }
@@ -94,6 +97,36 @@ public class ThemeConfig
     public bool AdaptToWallpaper { get; set; } = true;
     public bool EnableMicaEffect { get; set; } = true;
     public bool EnableAcrylicEffect { get; set; } = true;
+}
+
+/// <summary>
+/// Configuration des gestes (trackpad / souris).
+/// </summary>
+public class GestureConfig
+{
+    /// <summary>Active la détection des gestes trackpad.</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>Nombre minimal de doigts pour déclencher un swipe (Précision Touchpad).</summary>
+    public int MinContactsForSwipe { get; set; } = 3;
+
+    /// <summary>Seuil de delta cumulé pour déclencher le swipe (Précision Touchpad).</summary>
+    public int SwipeDeltaThreshold { get; set; } = 800;
+
+    /// <summary>Seuil de delta pour déclencher le fling (Momentum / molette).</summary>
+    public int MomentumTriggerThreshold { get; set; } = 150;
+
+    /// <summary>Fenêtre de décroissance du momentum (ms).</summary>
+    public int MomentumDecayWindowMs { get; set; } = 500;
+
+    /// <summary>Anti-rebond entre deux bascules (ms).</summary>
+    public int MomentumCooldownMs { get; set; } = 350;
+
+    /// <summary>Timeout avant qu'un contact soit considéré comme obsolète (ms).</summary>
+    public int ContactStaleTimeoutMs { get; set; } = 120;
+
+    /// <summary>Timeout avant nouvelle session de geste (ms).</summary>
+    public int NewSessionTimeoutMs { get; set; } = 200;
 }
 
 /// <summary>

@@ -33,25 +33,14 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
     }
 
     private const int MaxContacts = 16;
-
-    /// <summary>Nombre minimal de contacts pour activer le swipe.</summary>
-    private const int MinContactsForSwipe = 3;
-
-    /// <summary>Delta cumulé (somme des X des contacts) déclenchant le swipe.</summary>
-    private const int SwipeDeltaThreshold = 800;
-
-    /// <summary>Garde anti-saut : un écart X supérieur (rewrapping absolu) est ignoré.</summary>
-    private const int MaxContactStep = 0x4000;
-
     private const int MaxButtons = 8;
 
-    /// <summary>Un contact est « suivi » tant que ses rapports arrivent dans cette fenêtre.</summary>
-    private static readonly long ContactStaleTicks = MsToTicks(120);
-
-    /// <summary>Sans rapport pendant cette durée, la session de geste est réinitialisée.</summary>
-    private static readonly long NewSessionTicks = MsToTicks(200);
-
-    private static long MsToTicks(long ms) => ms * Stopwatch.Frequency / 1000;
+    // Configuration (remplace les constantes hardcodées)
+    private int _minContactsForSwipe = 3;
+    private int _swipeDeltaThreshold = 800;
+    private int _maxContactStep = 0x4000;
+    private long _contactStaleTicks;
+    private long _newSessionTicks;
 
     private readonly MessageWindow? _sourceWindow;
 
@@ -66,6 +55,29 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
 
     // Suivi des contacts (par slot) pour mesurer le mouvement horizontal sans
     // dépendre de l'ordre des rapports.
+    private readonly HashSet<int> _activeIds = new();
+    private readonly long[] _contactX = new long[MaxContacts];
+    private readonly long[] _contactTs = new long[MaxContacts];
+
+    private long _deltaAccum;
+    private bool _swipeTriggered;
+    private long _lastReportTs;
+    private bool _disposed;
+
+    public PrecisionTouchpadWatcher(MessageWindow? sourceWindow)
+        => _sourceWindow = sourceWindow;
+
+    /// <summary>Initialise la configuration depuis le service de configuration.</summary>
+    public void Configure(WinSpaces.Configuration.GestureConfig config)
+    {
+        if (config == null) return;
+        _minContactsForSwipe = Math.Max(2, config.MinContactsForSwipe);
+        _swipeDeltaThreshold = Math.Max(100, config.SwipeDeltaThreshold);
+        _contactStaleTicks = MsToTicks(Math.Max(50, config.ContactStaleTimeoutMs));
+        _newSessionTicks = MsToTicks(Math.Max(100, config.NewSessionTimeoutMs));
+        
+        AppLog.Info($"PrecisionTouchpadWatcher configuré : MinContacts={_minContactsForSwipe}, SwipeThreshold={_swipeDeltaThreshold}, StaleTimeout={config.ContactStaleTimeoutMs}ms, NewSessionTimeout={config.NewSessionTimeoutMs}ms");
+    }.
     private readonly HashSet<int> _activeIds = new();
     private readonly long[] _contactX = new long[MaxContacts];
     private readonly long[] _contactTs = new long[MaxContacts];
@@ -94,17 +106,7 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
             return;
         }
 
-        // Réception des rapports HID du toucher même sans focus (INPUTSINK).
-        var device = new RAWINPUTDEVICE
-        {
-            usUsagePage = RawInputConstants.USAGE_PAGE_DIGITIZER,
-            usUsage = RawInputConstants.USAGE_TOUCHPAD,
-            dwFlags = RawInputConstants.RIDEV_INPUTSINK | RawInputConstants.RIDEV_DEVNOTIFY,
-            hwndTarget = _sourceWindow.Handle
-        };
-
-        bool ok = NativeMethods.RegisterRawInputDevices(
-            new[] { device }, 1, (uint)Marshal.SizeOf<RAWINPUTDEVICE>());
+        bool ok = RegisterTouchpad();
         if (!ok)
         {
             AppLog.Error(new InvalidOperationException(
@@ -182,20 +184,16 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
 
     private IntPtr AcquirePreparsedData(IntPtr hDevice)
     {
-        uint size = 0;
-        NativeMethods.GetRawInputDeviceInfo(
-            hDevice, RawInputConstants.RIDI_PREPARSEDDATA, IntPtr.Zero, ref size);
-        if (size == 0) return IntPtr.Zero;
-
-        IntPtr preparsed = Marshal.AllocHGlobal((int)size);
-        uint result = NativeMethods.GetRawInputDeviceInfo(
-            hDevice, RawInputConstants.RIDI_PREPARSEDDATA, preparsed, ref size);
-        if (result == uint.MaxValue || result == 0)
+        // CORRECTION: Utiliser HidD_GetPreparsedData qui est l'API correcte
+        // pour obtenir les données preparsed d'un périphérique HID.
+        // GetRawInputDeviceInfo avec RIDI_PREPARSEDDATA est moins fiable.
+        if (NativeMethods.HidD_GetPreparsedData(hDevice, out IntPtr preparsedData))
         {
-            Marshal.FreeHGlobal(preparsed);
-            return IntPtr.Zero;
+            return preparsedData;
         }
-        return preparsed;
+
+        AppLog.Warn("HidD_GetPreparsedData a échoué pour le touchpad.");
+        return IntPtr.Zero;
     }
 
     /// <summary>Journalise les capacités HID du pavé (diagnostic, sans parsing figé).</summary>
@@ -228,6 +226,7 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
             // et on recharge les données « preparsed » du nouveau périphérique.
             AppLog.Info("WM_INPUT_DEVICE_CHANGE : ré-inventaire des dispositifs.");
             PrecisionTouchpadPresent = EnumeratePrecisionTouchpad();
+            if (PrecisionTouchpadPresent) RegisterTouchpad();
         }
     }
 
@@ -386,7 +385,10 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
 
         if (Math.Abs(_deltaAccum) >= SwipeDeltaThreshold)
         {
-            int direction = _deltaAccum > 0 ? -1 : 1;
+            // CORRECTION: Logique de direction corrigée.
+            // Delta positif (mouvement vers la droite) = bureau suivant (+1)
+            // Delta négatif (mouvement vers la gauche) = bureau précédent (-1)
+            int direction = _deltaAccum > 0 ? 1 : -1;
             _swipeTriggered = true;
             _deltaAccum = 0;
 
@@ -445,6 +447,23 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
         return false;
     }
 
+    private bool RegisterTouchpad()
+    {
+        if (_sourceWindow == null) return false;
+
+        // Réception des rapports HID du toucher même sans focus (INPUTSINK).
+        var device = new RAWINPUTDEVICE
+        {
+            usUsagePage = RawInputConstants.USAGE_PAGE_DIGITIZER,
+            usUsage = RawInputConstants.USAGE_TOUCHPAD,
+            dwFlags = RawInputConstants.RIDEV_INPUTSINK | RawInputConstants.RIDEV_DEVNOTIFY,
+            hwndTarget = _sourceWindow.Handle
+        };
+
+        return NativeMethods.RegisterRawInputDevices(
+            new[] { device }, 1, (uint)Marshal.SizeOf<RAWINPUTDEVICE>());
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
@@ -460,7 +479,9 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
     {
         if (_preparsedData != IntPtr.Zero)
         {
-            Marshal.FreeHGlobal(_preparsedData);
+            // CORRECTION: Utiliser HidD_FreePreparsedData au lieu de Marshal.FreeHGlobal
+            // pour libérer correctement les données preparsed allouées par HidD_GetPreparsedData
+            NativeMethods.HidD_FreePreparsedData(_preparsedData);
             _preparsedData = IntPtr.Zero;
         }
     }

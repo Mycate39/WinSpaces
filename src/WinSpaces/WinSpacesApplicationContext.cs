@@ -66,7 +66,7 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
 
         _hotkeys = new HotkeyService(_msgWindow, _vds);
         _globalHotkeys = new GlobalHotkeyManager(_msgWindow);
-        _gestures = new GestureManager(_msgWindow, _vds);
+        _gestures = new GestureManager(_msgWindow, _vds, _configurationService);
         _fullscreen = new FullscreenSpaceManager(_vds);
         _tray = new TrayIconService(_options);
         
