@@ -1,4 +1,5 @@
 using WinSpaces.Native;
+using WinSpaces.Configuration;
 
 namespace WinSpaces.Services;
 

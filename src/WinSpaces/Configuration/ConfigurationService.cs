@@ -291,4 +291,10 @@ public sealed class ConfigurationService : HealthCheckableBase, IDisposable, IAs
             _watcher.Dispose();
         }
     }
+
+    public ValueTask DisposeAsync()
+    {
+        Dispose();
+        return ValueTask.CompletedTask;
+    }
 }

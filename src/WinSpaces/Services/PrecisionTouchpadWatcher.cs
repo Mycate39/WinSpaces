@@ -78,14 +78,6 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
         
         AppLog.Info($"PrecisionTouchpadWatcher configuré : MinContacts={_minContactsForSwipe}, SwipeThreshold={_swipeDeltaThreshold}, StaleTimeout={config.ContactStaleTimeoutMs}ms, NewSessionTimeout={config.NewSessionTimeoutMs}ms");
     }
-    private readonly HashSet<int> _activeIds = new();
-    private readonly long[] _contactX = new long[MaxContacts];
-    private readonly long[] _contactTs = new long[MaxContacts];
-
-    private long _deltaAccum;
-    private bool _swipeTriggered;
-    private long _lastReportTs;
-    private bool _disposed;
 
     public PrecisionTouchpadWatcher(MessageWindow? sourceWindow)
         => _sourceWindow = sourceWindow;

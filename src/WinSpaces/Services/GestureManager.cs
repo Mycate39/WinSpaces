@@ -1,6 +1,7 @@
 using WinSpaces.Desktops;
 using WinSpaces.Native;
 using WinSpaces.Diagnostics;
+using WinSpaces.Configuration;
 
 
 namespace WinSpaces.Services;
@@ -95,7 +96,7 @@ internal sealed class GestureManager : HealthCheckableBase, IDisposable
     }
 
     /// <summary>Gestionnaire d'événement pour les changements de configuration (hot-reload).</summary>
-    private void OnConfigurationChanged(object? sender, WinSpaces.Configuration e)
+    private void OnConfigurationChanged(object? sender, WinSpacesConfiguration e)
     {
         // Appliquer uniquement la section gestes de la nouvelle configuration
         ApplyGestureConfiguration(e.Gestures);
