@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using WinSpaces.Native;
@@ -345,10 +346,10 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
                     RawInputConstants.USAGE_X, reportPtr, reportLen, out xv))
             {
                 long x = xv;
-                if (_contactTs[id] != 0 && now - _contactTs[id] <= ContactStaleTicks)
+                if (_contactTs[id] != 0 && now - _contactTs[id] <= _contactStaleTicks)
                 {
                     long d = x - _contactX[id];
-                    if (Math.Abs(d) < MaxContactStep)
+                    if (Math.Abs(d) < _maxContactStep)
                         _deltaAccum += d;
                 }
                 _contactX[id] = x;
@@ -359,7 +360,7 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
         // 3) Décision de balayage.
         int count = _haveContactCount ? _activeContactCount : _activeIds.Count;
 
-        if (count < MinContactsForSwipe)
+        if (count < _minContactsForSwipe)
         {
             // Pas assez de doigts : on remet à zéro et on ré-arme le geste.
             _deltaAccum = 0;
@@ -374,7 +375,7 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
             return;
         }
 
-        if (Math.Abs(_deltaAccum) >= SwipeDeltaThreshold)
+        if (Math.Abs(_deltaAccum) >= _swipeDeltaThreshold)
         {
             // CORRECTION: Logique de direction corrigée.
             // Delta positif (mouvement vers la droite) = bureau suivant (+1)
