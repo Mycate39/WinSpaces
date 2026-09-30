@@ -79,9 +79,6 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
         AppLog.Info($"PrecisionTouchpadWatcher configuré : MinContacts={_minContactsForSwipe}, SwipeThreshold={_swipeDeltaThreshold}, StaleTimeout={config.ContactStaleTimeoutMs}ms, NewSessionTimeout={config.NewSessionTimeoutMs}ms");
     }
 
-    public PrecisionTouchpadWatcher(MessageWindow? sourceWindow)
-        => _sourceWindow = sourceWindow;
-
     /// <summary>true si un Précision Touchpad est présent dans le système.</summary>
     public bool PrecisionTouchpadPresent { get; private set; }
 
