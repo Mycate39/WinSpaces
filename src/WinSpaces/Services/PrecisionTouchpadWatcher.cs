@@ -244,11 +244,9 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
             if (size == 0 || size > MaxReportSize) return;
 
             // Use buffer pool to avoid allocations
-            byte[] buffer = null;
-            if (!_bufferPool.TryDequeue(out buffer) || buffer.Length < size)
-            {
-                buffer = new byte[Math.Max(size, 1024)];
-            }
+            byte[] buffer = _bufferPool.TryDequeue(out var pooledBuffer) && pooledBuffer.Length >= size
+                ? pooledBuffer
+                : new byte[Math.Max(size, 1024)];
             
             // Pin buffer for unmanaged access
             GCHandle handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
@@ -327,7 +325,7 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
     /// d'un contact. Le décodage s'appuie sur le report descriptor réel du pavé
     /// (aucun offset lié au constructeur n'est présumé).
     /// </summary>
-    private void ProcessHidReport(IntPtr reportPtr, int reportLen)
+    private void ProcessHidReport(IntPtr buffer, int start, int reportLen)
     {
         if (_preparsedData == IntPtr.Zero) return;
 
@@ -342,6 +340,8 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
             if (!_haveContactCount) _activeIds.Clear();
         }
         _lastReportTs = now;
+
+        var reportPtr = IntPtr.Add(buffer, start);
 
         // 1) Contact Count (0x54) — présent dans le rapport de scan/boutons.
         if (TryGetUsage(RawInputConstants.USAGE_PAGE_DIGITIZER,

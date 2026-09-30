@@ -30,7 +30,7 @@ jobs:
     - name: Create GitHub Release and Upload Asset
       uses: softprops/action-gh-release@v2
       with:
-        files: publish/WinSpaces.exe
+        files: src/WinSpaces/bin/Release/net8.0-windows/win-x64/publish/WinSpaces.exe
         generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
