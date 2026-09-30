@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Diagnostics;
 using WinSpaces.Desktops.Interop;
 using WinSpaces.Native;
 using WinSpaces.Services;
@@ -367,6 +368,12 @@ public sealed class VirtualDesktopService : HealthCheckableBase, IDisposable
                     Marshal.ReleaseComObject(target);
                 }
             }
+            catch (PlatformNotSupportedException ex)
+            {
+                // GetViewForHwnd not supported on this Windows build (e.g., Windows 10)
+                AppLog.Info($"GetViewForHwnd non supporté sur cette version de Windows : {ex.Message}");
+                return false;
+            }
             catch (Exception ex)
             {
                 AppLog.Error(ex);
@@ -452,7 +459,27 @@ public sealed class VirtualDesktopService : HealthCheckableBase, IDisposable
             }
 
             var shellInstance = Activator.CreateInstance(immersiveType);
-            if (shellInstance is IServiceProvider10 provider)
+            IServiceProvider10? provider = null;
+            
+            // Use Marshal.QueryInterface to safely get IServiceProvider10 - avoids InvalidCastException
+            if (shellInstance != null)
+            {
+                var iidProvider = typeof(IServiceProvider10).GUID;
+                int hr = Marshal.QueryInterface(Marshal.GetIUnknownForObject(shellInstance), ref iidProvider, out IntPtr ppv);
+                if (hr == 0 && ppv != IntPtr.Zero)
+                {
+                    provider = Marshal.GetObjectForIUnknown(ppv) as IServiceProvider10;
+                    Marshal.Release(ppv);
+                }
+                else
+                {
+                    AppLog.Info($"IServiceProvider10 non disponible via QueryInterface (hr=0x{hr:X8}), tentative via cast direct...");
+                    // Fallback to direct cast (works on some Windows versions)
+                    provider = shellInstance as IServiceProvider10;
+                }
+            }
+            
+            if (provider != null)
             {
                 if (build >= 26100)
                     _w11New = TryQueryInternal<IVirtualDesktopManagerInternal24H2>(provider, "11 24H2 / 25H2 / 26H2+");

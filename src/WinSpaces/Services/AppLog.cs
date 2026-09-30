@@ -12,6 +12,11 @@ internal static class AppLog
 {
     private static readonly object Gate = new();
     private static string? _logPath;
+    private static bool _debugEnabled = false;
+
+    public static bool IsDebugEnabled => _debugEnabled;
+
+    public static void SetDebugEnabled(bool enabled) => _debugEnabled = enabled;
 
     private static string LogPath
         => _logPath ??= Path.Combine(
@@ -26,6 +31,8 @@ internal static class AppLog
     public static void Error(string message) => Write("ERROR", message);
 
     public static void Error(Exception ex) => Write("ERROR", ex.ToString());
+
+    public static void Debug(string message) => Write("DEBUG", message);
 
     private static void Write(string level, string message)
     {

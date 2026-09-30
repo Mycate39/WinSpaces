@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Collections.Concurrent;
 using WinSpaces.Native;
 using WinSpaces.Diagnostics;
 
@@ -35,6 +36,11 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
 
     private const int MaxContacts = 16;
     private const int MaxButtons = 8;
+    private const int MaxReportSize = 4096;
+
+    // Buffer pool to avoid allocations on each WM_INPUT
+    private static readonly ConcurrentQueue<byte[]> _bufferPool = new();
+    private static readonly object _poolLock = new();
 
     // Configuration (remplace les constantes hardcodées)
     private int _minContactsForSwipe = 3;
@@ -231,27 +237,45 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
             NativeMethods.GetRawInputData(hRawInput, RawInputConstants.RID_INPUT,
                 IntPtr.Zero, ref size, (uint)Marshal.SizeOf<RAWINPUTHEADER>());
                 
-            AppLog.Info($"WM_INPUT reçu. Handle: 0x{hRawInput:X}. Taille calculée: {size} octets.");
+            // Only log at debug level to avoid log spam
+            if (AppLog.IsDebugEnabled)
+                AppLog.Debug($"WM_INPUT reçu. Handle: 0x{hRawInput:X}. Taille calculée: {size} octets.");
                 
-            if (size == 0 || size > 4096) return;
+            if (size == 0 || size > MaxReportSize) return;
 
-            IntPtr buffer = Marshal.AllocHGlobal((int)size);
+            // Use buffer pool to avoid allocations
+            byte[] buffer = null;
+            if (!_bufferPool.TryDequeue(out buffer) || buffer.Length < size)
+            {
+                buffer = new byte[Math.Max(size, 1024)];
+            }
+            
+            // Pin buffer for unmanaged access
+            GCHandle handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
             try
             {
+                IntPtr bufferPtr = handle.AddrOfPinnedObject();
                 uint read = NativeMethods.GetRawInputData(hRawInput, RawInputConstants.RID_INPUT,
-                    buffer, ref size, (uint)Marshal.SizeOf<RAWINPUTHEADER>());
+                    bufferPtr, ref size, (uint)Marshal.SizeOf<RAWINPUTHEADER>());
                 if (read == uint.MaxValue) 
                 {
-                    AppLog.Info("Erreur GetRawInputData : uint.MaxValue retourné.");
+                    AppLog.Warning("Erreur GetRawInputData : uint.MaxValue retourné.");
                     return;
                 }
 
-                var header = Marshal.PtrToStructure<RAWINPUTHEADER>(buffer);
-                AppLog.Info($"RAWINPUTHEADER → Type: {header.dwType}, Size: {header.dwSize}, hDevice: 0x{header.hDevice:X}");
+                // Parse header directly from buffer without Marshal.PtrToStructure
+                // RAWINPUTHEADER: dwType(4), dwSize(4), hDevice(8), wParam(8) = 24 bytes on x64
+                int headerType = Marshal.ReadInt32(bufferPtr, 0);
+                int headerSize = Marshal.ReadInt32(bufferPtr, 4);
+                IntPtr hDevice = Marshal.ReadIntPtr(bufferPtr, 8);
+                
+                if (AppLog.IsDebugEnabled)
+                    AppLog.Debug($"RAWINPUTHEADER → Type: {headerType}, Size: {headerSize}, hDevice: 0x{hDevice:X}");
 
-                if (header.dwType != RawInputConstants.RIM_TYPE_HID)
+                if (headerType != RawInputConstants.RIM_TYPE_HID)
                 {
-                    AppLog.Info($"Rejeté: Le périphérique n'est pas de type HID (Type {header.dwType}).");
+                    if (AppLog.IsDebugEnabled)
+                        AppLog.Debug($"Rejeté: Le périphérique n'est pas de type HID (Type {headerType}).");
                     return;
                 }
 
@@ -260,14 +284,17 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
                 int hidOffset = Marshal.SizeOf<RAWINPUTHEADER>();
                 if (size < hidOffset + 8) 
                 {
-                    AppLog.Info($"Taille insuffisante pour les métadonnées HID ({size} < {hidOffset + 8}).");
+                    if (AppLog.IsDebugEnabled)
+                        AppLog.Debug($"Taille insuffisante pour les métadonnées HID ({size} < {hidOffset + 8}).");
                     return;
                 }
                 
-                uint dwSizeHid = (uint)Marshal.ReadInt32(buffer, hidOffset);
-                uint dwCount = (uint)Marshal.ReadInt32(buffer, hidOffset + 4);
+                uint dwSizeHid = (uint)Marshal.ReadInt32(bufferPtr, hidOffset);
+                uint dwCount = (uint)Marshal.ReadInt32(bufferPtr, hidOffset + 4);
                 int dataOffset = hidOffset + 8;
-                AppLog.Info($"HID Info → dwSizeHid: {dwSizeHid}, dwCount: {dwCount}, offset: {dataOffset}");
+                
+                if (AppLog.IsDebugEnabled)
+                    AppLog.Debug($"HID Info → dwSizeHid: {dwSizeHid}, dwCount: {dwCount}, offset: {dataOffset}");
                 
                 if (dwSizeHid == 0 || dwCount == 0) return;
 
@@ -276,18 +303,16 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
                     int reportStart = dataOffset + (int)(i * dwSizeHid);
                     if (reportStart + (int)dwSizeHid <= size)
                     {
-                        byte[] rawBytes = new byte[dwSizeHid];
-                        Marshal.Copy(buffer + reportStart, rawBytes, 0, (int)dwSizeHid);
-                        string hex = BitConverter.ToString(rawBytes);
-                        AppLog.Info($"Rapport HID [{i + 1}/{dwCount}] hex: {hex}");
-                        
-                        ProcessHidReport(buffer, reportStart, (int)dwSizeHid);
+                        ProcessHidReport(bufferPtr, reportStart, (int)dwSizeHid);
                     }
                 }
             }
             finally
             {
-                Marshal.FreeHGlobal(buffer);
+                handle.Free();
+                // Return buffer to pool for reuse
+                if (buffer.Length <= MaxReportSize)
+                    _bufferPool.Enqueue(buffer);
             }
         }
         catch (Exception ex)
@@ -302,7 +327,7 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
     /// d'un contact. Le décodage s'appuie sur le report descriptor réel du pavé
     /// (aucun offset lié au constructeur n'est présumé).
     /// </summary>
-    private void ProcessHidReport(IntPtr buffer, int start, int reportLen)
+    private void ProcessHidReport(IntPtr reportPtr, int reportLen)
     {
         if (_preparsedData == IntPtr.Zero) return;
 
@@ -318,14 +343,14 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
         }
         _lastReportTs = now;
 
-        var reportPtr = IntPtr.Add(buffer, start);
-
         // 1) Contact Count (0x54) — présent dans le rapport de scan/boutons.
         if (TryGetUsage(RawInputConstants.USAGE_PAGE_DIGITIZER,
                 RawInputConstants.USAGE_CONTACT_COUNT, reportPtr, reportLen, out uint contactCount))
         {
             _haveContactCount = true;
-            _activeContactCount = (int)contactCount;
+            // Validate contact count: clamp to realistic range (1-10 fingers max)
+            // Some touchpads report incorrect values (e.g., 255, 230)
+            _activeContactCount = Math.Clamp((int)contactCount, 1, 10);
         }
 
         // 2) Rapport de contact : identifiant + position X (+ état du contact).

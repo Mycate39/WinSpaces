@@ -138,4 +138,5 @@ public class GlobalConfig
     public string Language { get; set; } = "fr-FR";
     public bool MinimizeToTray { get; set; } = true;
     public bool ShowNotifications { get; set; } = true;
+    public bool DebugLogging { get; set; } = false;
 }

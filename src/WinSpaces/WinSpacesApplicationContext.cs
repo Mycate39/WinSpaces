@@ -120,6 +120,9 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
         _healthMonitor.Register(_spotlightService);
         _healthMonitor.Register(_menuBarService);
 
+        // Enable debug logging if configured
+        AppLog.SetDebugEnabled(_configurationService.Current.Global.DebugLogging);
+
         WireEvents();
         StartServices();
     }
