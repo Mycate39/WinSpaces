@@ -1,0 +1,5 @@
+feat: ajout configuration DebugLogging et corrections PrecisionTouchpadWatcher
+
+- Ajout de la propriete DebugLogging dans GlobalConfig pour activer/desactiver les logs de debogage
+- Corrections multiples dans PrecisionTouchpadWatcher (champs prives, gestion Win32Exception, liberation memoire)
+- Corrections de compilation et nettoyage du code
