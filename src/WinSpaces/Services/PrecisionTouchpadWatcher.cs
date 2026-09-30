@@ -449,7 +449,11 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
 
     private bool RegisterTouchpad()
     {
-        if (_sourceWindow == null) return false;
+        if (_sourceWindow == null) 
+        {
+            AppLog.Error("PrecisionTouchpadWatcher: _sourceWindow is null, cannot register touchpad.");
+            return false;
+        }
 
         // Réception des rapports HID du toucher même sans focus (INPUTSINK).
         var device = new RAWINPUTDEVICE
@@ -460,8 +464,20 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
             hwndTarget = _sourceWindow.Handle
         };
 
-        return NativeMethods.RegisterRawInputDevices(
+        bool result = NativeMethods.RegisterRawInputDevices(
             new[] { device }, 1, (uint)Marshal.SizeOf<RAWINPUTDEVICE>());
+
+        if (result)
+        {
+            AppLog.Info($"PrecisionTouchpadWatcher: RegisterRawInputDevices succès pour hwndTarget={_sourceWindow.Handle}.");
+        }
+        else
+        {
+            AppLog.Error(new Win32Exception(Marshal.GetLastWin32Error(), 
+                $"Échec RegisterRawInputDevices pour hwndTarget={_sourceWindow.Handle}."));
+        }
+
+        return result;
     }
 
     public void Dispose()

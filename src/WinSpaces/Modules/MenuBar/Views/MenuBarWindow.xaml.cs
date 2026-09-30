@@ -33,6 +33,14 @@ public partial class MenuBarWindow : Window
     }
 
     /// <summary>
+    /// Repositionne la barre de menu (utile après un changement de résolution ou de moniteur principal)
+    /// </summary>
+    public void Reposition()
+    {
+        PositionMenuBar();
+    }
+
+    /// <summary>
     /// Positionne la MenuBar sur toute la largeur de l'écran principal.
     /// </summary>
     private void PositionMenuBar()

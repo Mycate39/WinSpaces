@@ -64,6 +64,7 @@ internal sealed class HotkeyService : HealthCheckableBase, IDisposable
         if (NativeMethods.RegisterHotKey(_window.Handle, id, modifiers, vk))
         {
             _registeredIds.Add(id);
+            AppLog.Info($"HotkeyService: RegisterHotKey succès id=0x{id:X} vk=0x{vk:X}.");
             return true;
         }
 

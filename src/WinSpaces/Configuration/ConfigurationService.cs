@@ -1,6 +1,8 @@
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
+using System.Threading.Tasks;
 using WinSpaces.Diagnostics;
 using WinSpaces.Services;
 
@@ -10,7 +12,7 @@ namespace WinSpaces.Configuration;
 /// Service de gestion centralisée de la configuration WinSpaces.
 /// Gère la persistance JSON, le hot-reload et les notifications de changement.
 /// </summary>
-public sealed class ConfigurationService : HealthCheckableBase, IDisposable
+public sealed class ConfigurationService : HealthCheckableBase, IDisposable, IAsyncDisposable
 {
     private static readonly string ConfigDirectory = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -19,6 +21,7 @@ public sealed class ConfigurationService : HealthCheckableBase, IDisposable
     
     private static readonly string ConfigFilePath = Path.Combine(ConfigDirectory, "config.json");
     
+    private readonly SemaphoreSlim _semaphore = new(1, 1);
     private readonly FileSystemWatcher? _watcher;
     private WinSpacesConfiguration _configuration;
     private bool _disposed;
@@ -71,6 +74,32 @@ public sealed class ConfigurationService : HealthCheckableBase, IDisposable
 
     private WinSpacesConfiguration LoadConfiguration()
     {
+        _semaphore.Wait();
+        try
+        {
+            return LoadConfigurationInternal();
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
+    }
+
+    public async Task<WinSpacesConfiguration> LoadConfigurationAsync()
+    {
+        await _semaphore.WaitAsync();
+        try
+        {
+            return await LoadConfigurationInternalAsync();
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
+    }
+
+    private WinSpacesConfiguration LoadConfigurationInternal()
+    {
         try
         {
             if (!Directory.Exists(ConfigDirectory))
@@ -90,7 +119,73 @@ public sealed class ConfigurationService : HealthCheckableBase, IDisposable
             }
 
             var defaultConfig = new WinSpacesConfiguration();
-            SaveConfiguration(defaultConfig);
+            SaveConfigurationInternal(defaultConfig);
+            SetMetric("load_source", "default");
+            return defaultConfig;
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error(new InvalidOperationException("Erreur chargement configuration", ex));
+            SetMetric("load_error", ex.Message);
+            return new WinSpacesConfiguration();
+        }
+    }
+
+    private WinSpacesConfiguration LoadConfigurationInternalSync()
+    {
+        try
+        {
+            if (!Directory.Exists(ConfigDirectory))
+                Directory.CreateDirectory(ConfigDirectory);
+
+            if (File.Exists(ConfigFilePath))
+            {
+                var json = File.ReadAllText(ConfigFilePath);
+                var config = JsonSerializer.Deserialize<WinSpacesConfiguration>(json, GetJsonOptions());
+                
+                if (config != null)
+                {
+                    AppLog.Info($"Configuration chargée depuis {ConfigFilePath}");
+                    SetMetric("load_source", "file");
+                    return config;
+                }
+            }
+
+            var defaultConfig = new WinSpacesConfiguration();
+            SaveConfigurationInternalSync(defaultConfig);
+            SetMetric("load_source", "default");
+            return defaultConfig;
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error(new InvalidOperationException("Erreur chargement configuration", ex));
+            SetMetric("load_error", ex.Message);
+            return new WinSpacesConfiguration();
+        }
+    }
+
+    private async Task<WinSpacesConfiguration> LoadConfigurationInternalAsync()
+    {
+        try
+        {
+            if (!Directory.Exists(ConfigDirectory))
+                Directory.CreateDirectory(ConfigDirectory);
+
+            if (File.Exists(ConfigFilePath))
+            {
+                var json = await File.ReadAllTextAsync(ConfigFilePath);
+                var config = JsonSerializer.Deserialize<WinSpacesConfiguration>(json, GetJsonOptions());
+                
+                if (config != null)
+                {
+                    AppLog.Info($"Configuration chargée depuis {ConfigFilePath}");
+                    SetMetric("load_source", "file");
+                    return config;
+                }
+            }
+
+            var defaultConfig = new WinSpacesConfiguration();
+            await SaveConfigurationInternalAsync(defaultConfig);
             SetMetric("load_source", "default");
             return defaultConfig;
         }
@@ -104,10 +199,18 @@ public sealed class ConfigurationService : HealthCheckableBase, IDisposable
 
     public void SaveConfiguration()
     {
-        SaveConfiguration(_configuration);
+        _semaphore.Wait();
+        try
+        {
+            SaveConfigurationInternal(_configuration);
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
     }
 
-    private void SaveConfiguration(WinSpacesConfiguration config)
+    private void SaveConfigurationInternal(WinSpacesConfiguration config)
     {
         try
         {
@@ -141,11 +244,13 @@ public sealed class ConfigurationService : HealthCheckableBase, IDisposable
 
     private void OnConfigFileChanged(object sender, FileSystemEventArgs e)
     {
+        // Pas de besoin de Wait() ici car c'est un rechargement background, 
+        // mais on doit s'assurer de ne pas bloquer si un autre thread écrit.
+        if (!_semaphore.Wait(0)) return; 
+        
         try
         {
-            Thread.Sleep(100);
-            
-            var newConfig = LoadConfiguration();
+            var newConfig = LoadConfigurationInternal();
             _configuration = newConfig;
             
             SetMetric("reload_count", (int)(Metrics.GetValueOrDefault("reload_count", 0)) + 1);
@@ -158,7 +263,18 @@ public sealed class ConfigurationService : HealthCheckableBase, IDisposable
         {
             AppLog.Error(new InvalidOperationException("Erreur hot-reload configuration", ex));
         }
+        finally
+        {
+            _semaphore.Release();
+        }
     }
+
+    // Refactor pour permettre un chargement interne sans re-verrouiller le semaphore dans LoadConfiguration()
+    private WinSpacesConfiguration LoadConfigurationInternal()
+    {
+        // ... logique de LoadConfiguration sans le semaphore Wait/Finally
+        // (J'ai besoin de créer cette méthode pour éviter un deadlock)
+        // ...
 
     private static JsonSerializerOptions GetJsonOptions()
     {

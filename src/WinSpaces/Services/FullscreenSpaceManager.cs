@@ -33,6 +33,7 @@ internal sealed class FullscreenSpaceManager : HealthCheckableBase, IDisposable
     private readonly System.Windows.Forms.Timer _poll;
     private readonly Dictionary<IntPtr, SpaceSession> _sessions = new();
     private DateTime _lastActionUtc = DateTime.MinValue;
+    private int _checkCounter = 0;
 
     public FullscreenSpaceManager(VirtualDesktopService vds)
     {

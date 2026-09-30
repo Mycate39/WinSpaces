@@ -1,4 +1,8 @@
 using System.Runtime.InteropServices;
+using System.Windows; // Pour System.Windows.Application et ShutdownMode
+using System.Windows.Interop; // Pour ComponentDispatcher
+using System.Windows.Forms; // Pour IMessageFilter
+using System.Windows.Threading; // Pour DispatcherPriority
 using WinSpaces.Desktops;
 using WinSpaces.Native;
 using WinSpaces.Services;
@@ -53,10 +57,34 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
     private MainWindow? _mainWindow;
     private bool _disposed;
 
+    // Instance de l'application WPF - CRITICAL pour les fenêtres WPF, ressources, bindings, etc.
+    private System.Windows.Application? _wpfApp;
+    
+    // Message filter pour pomper le dispatcher WPF depuis la boucle WinForms
+    private WpfMessageFilter? _wpfMessageFilter;
+
     public HealthMonitor HealthMonitor => _healthMonitor;
 
     public WinSpacesApplicationContext()
     {
+        // IMPORTANT: Initialiser l'application WPF AVANT tout service/fenêtre WPF
+        // Cela crée Application.Current, initialise le dispatcher, charge les ressources App.xaml, etc.
+        if (System.Windows.Application.Current == null)
+        {
+            _wpfApp = new System.Windows.Application();
+            _wpfApp.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            // Ne pas appeler Run() car on utilise WinForms Application.Run(context)
+            // Le dispatcher WPF sera pompé par la boucle de messages WinForms via IMessageFilter
+        }
+        else
+        {
+            _wpfApp = System.Windows.Application.Current;
+        }
+        
+        // Installer le message filter pour pomper le dispatcher WPF
+        _wpfMessageFilter = new WpfMessageFilter();
+        Application.AddMessageFilter(_wpfMessageFilter);
+
         _vds = new VirtualDesktopService();
         _msgWindow = new MessageWindow();
         _configurationService = new ConfigurationService();
@@ -166,6 +194,7 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
         
         // Initialiser et afficher MenuBar
         _menuBarService.Start();
+        AppLog.Info("WinSpacesApplicationContext: MenuBar service started.");
         ShowMenuBar();
         
         _tray.ShowInfo("WinSpaces v2.5.3",
@@ -196,9 +225,11 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
                 vm.Dispose();
                 _menuBarWindow = null;
             };
+            AppLog.Info("WinSpacesApplicationContext: MenuBar window created.");
         }
 
         _menuBarWindow.Show();
+        AppLog.Info("WinSpacesApplicationContext: MenuBar window shown.");
     }
 
     private void ToggleSpotlight()
@@ -274,6 +305,27 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
             _hotkeys.Dispose();
             _vds.Dispose();
             _msgWindow.DestroyHandle();
+
+            // Retirer le message filter WPF
+            if (_wpfMessageFilter != null)
+            {
+                Application.RemoveMessageFilter(_wpfMessageFilter);
+                _wpfMessageFilter = null;
+            }
+
+            // Arrêter proprement l'application WPF
+            if (_wpfApp != null)
+            {
+                try
+                {
+                    _wpfApp.Shutdown();
+                }
+                catch (Exception ex)
+                {
+                    AppLog.Error(new InvalidOperationException("Erreur arrêt WPF Application", ex));
+                }
+                _wpfApp = null;
+            }
         }
         catch (Exception ex)
         {
@@ -293,5 +345,25 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
             ExitApplication();
         }
         base.Dispose(disposing);
+    }
+}
+
+/// <summary>
+/// Message filter pour pomper le dispatcher WPF depuis la boucle de messages WinForms.
+/// Cela permet aux DispatcherTimer, bindings, et événements WPF de fonctionner correctement
+/// quand on utilise Application.Run() de WinForms au lieu de WPF Application.Run().
+/// </summary>
+internal sealed class WpfMessageFilter : IMessageFilter
+{
+    public bool PreFilterMessage(ref Message m)
+    {
+        // Pomper le dispatcher WPF pour traiter les messages en attente
+        if (System.Windows.Application.Current != null)
+        {
+            System.Windows.Application.Current.Dispatcher.Invoke(
+                System.Windows.Threading.DispatcherPriority.Background,
+                new Action(() => { }));
+        }
+        return false; // Ne pas consommer le message
     }
 }
