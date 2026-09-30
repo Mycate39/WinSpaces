@@ -77,7 +77,7 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
         _newSessionTicks = MsToTicks(Math.Max(100, config.NewSessionTimeoutMs));
         
         AppLog.Info($"PrecisionTouchpadWatcher configuré : MinContacts={_minContactsForSwipe}, SwipeThreshold={_swipeDeltaThreshold}, StaleTimeout={config.ContactStaleTimeoutMs}ms, NewSessionTimeout={config.NewSessionTimeoutMs}ms");
-    }.
+    }
     private readonly HashSet<int> _activeIds = new();
     private readonly long[] _contactX = new long[MaxContacts];
     private readonly long[] _contactTs = new long[MaxContacts];

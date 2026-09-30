@@ -269,13 +269,6 @@ public sealed class ConfigurationService : HealthCheckableBase, IDisposable, IAs
         }
     }
 
-    // Refactor pour permettre un chargement interne sans re-verrouiller le semaphore dans LoadConfiguration()
-    private WinSpacesConfiguration LoadConfigurationInternal()
-    {
-        // ... logique de LoadConfiguration sans le semaphore Wait/Finally
-        // (J'ai besoin de créer cette méthode pour éviter un deadlock)
-        // ...
-
     private static JsonSerializerOptions GetJsonOptions()
     {
         return new JsonSerializerOptions
