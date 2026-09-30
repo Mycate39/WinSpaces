@@ -37,7 +37,7 @@ internal sealed class MomentumGestureDetector : IDisposable
         _decayWindow = TimeSpan.FromMilliseconds(Math.Max(100, config.MomentumDecayWindowMs));
         _cooldown = TimeSpan.FromMilliseconds(Math.Max(100, config.MomentumCooldownMs));
         
-        AppLog.Info($"MomentumGestureDetector configuré : TriggerThreshold={_triggerThreshold}, DecayWindow={_decayWindow.TotalMs}ms, Cooldown={_cooldown.TotalMs}ms");
+        AppLog.Info($"MomentumGestureDetector configuré : TriggerThreshold={_triggerThreshold}, DecayWindow={_decayWindow.TotalMilliseconds}ms, Cooldown={_cooldown.TotalMilliseconds}ms");
     }
 
     public MouseHook MouseHook => _mouseHook;

@@ -152,7 +152,7 @@ public sealed class ConfigurationService : HealthCheckableBase, IDisposable, IAs
             }
 
             var defaultConfig = new WinSpacesConfiguration();
-            SaveConfigurationInternalSync(defaultConfig);
+            SaveConfigurationInternal(defaultConfig);
             SetMetric("load_source", "default");
             return defaultConfig;
         }
@@ -185,7 +185,7 @@ public sealed class ConfigurationService : HealthCheckableBase, IDisposable, IAs
             }
 
             var defaultConfig = new WinSpacesConfiguration();
-            await SaveConfigurationInternalAsync(defaultConfig);
+            SaveConfigurationInternal(defaultConfig);
             SetMetric("load_source", "default");
             return defaultConfig;
         }

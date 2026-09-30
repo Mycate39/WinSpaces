@@ -64,6 +64,8 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
     private long _lastReportTs;
     private bool _disposed;
 
+    private static long MsToTicks(int ms) => TimeSpan.FromMilliseconds(ms).Ticks;
+
     public PrecisionTouchpadWatcher(MessageWindow? sourceWindow)
         => _sourceWindow = sourceWindow;
 
@@ -181,7 +183,7 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
             return preparsedData;
         }
 
-        AppLog.Warn("HidD_GetPreparsedData a échoué pour le touchpad.");
+        AppLog.Warning("HidD_GetPreparsedData a échoué pour le touchpad.");
         return IntPtr.Zero;
     }
 
@@ -308,7 +310,7 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
         // Nouvelle session de geste après un silence : on remet à zéro les
         // accumulateurs, mais on garde l'armement tant que les doigts restent
         // posés — un seul déclenchement par geste, comme sur macOS.
-        if (_lastReportTs != 0 && now - _lastReportTs > NewSessionTicks)
+        if (_lastReportTs != 0 && now - _lastReportTs > _newSessionTicks)
         {
             _deltaAccum = 0;
             if (!_haveContactCount) _activeIds.Clear();

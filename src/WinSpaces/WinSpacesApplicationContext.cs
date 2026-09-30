@@ -83,7 +83,7 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
         
         // Installer le message filter pour pomper le dispatcher WPF
         _wpfMessageFilter = new WpfMessageFilter();
-        Application.AddMessageFilter(_wpfMessageFilter);
+        System.Windows.Forms.Application.AddMessageFilter(_wpfMessageFilter);
 
         _vds = new VirtualDesktopService();
         _msgWindow = new MessageWindow();
@@ -309,7 +309,7 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
             // Retirer le message filter WPF
             if (_wpfMessageFilter != null)
             {
-                Application.RemoveMessageFilter(_wpfMessageFilter);
+                System.Windows.Forms.Application.RemoveMessageFilter(_wpfMessageFilter);
                 _wpfMessageFilter = null;
             }
 
