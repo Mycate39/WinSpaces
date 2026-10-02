@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Windows;
 using WinSpaces.Diagnostics;
 using WinSpaces.Services;
@@ -30,7 +31,19 @@ public sealed class ThemeEngine : HealthCheckableBase
                 Source = new Uri($"pack://application:,,,/Modules/Theming/Themes/{themeName}.xaml")
             };
 
-            Application.Current.Resources.MergedDictionaries.Clear();
+            // Remove existing theme dictionaries (Light and Dark) while preserving base styles
+            var themesToRemove = Application.Current.Resources.MergedDictionaries
+                .Where(d => d.Source != null && 
+                           (d.Source.ToString().EndsWith("/LightTheme.xaml") || 
+                            d.Source.ToString().EndsWith("/DarkTheme.xaml")))
+                .ToList();
+
+            foreach (var theme in themesToRemove)
+            {
+                Application.Current.Resources.MergedDictionaries.Remove(theme);
+            }
+
+            // Add the new theme
             Application.Current.Resources.MergedDictionaries.Add(dict);
             
             _currentTheme = dict;

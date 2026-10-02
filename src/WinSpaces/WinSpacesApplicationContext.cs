@@ -34,16 +34,14 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
     private readonly MessageWindow _msgWindow;
     private readonly HotkeyService _hotkeys;
     private readonly GlobalHotkeyManager _globalHotkeys;
+    private readonly ConfigurationService _configurationService;
     private readonly GestureManager _gestures;
     private readonly FullscreenSpaceManager _fullscreen;
     private readonly ThemeEngine _themeEngine;
     private readonly WallpaperMonitor _wallpaperMonitor;
-
-    private readonly ConfigurationService _configurationService;
     private readonly WidgetManager _widgetManager;
-
-    private readonly TrayIconService _tray;
     private readonly AppOptions _options = new();
+    private readonly TrayIconService _tray;
     private readonly HealthMonitor _healthMonitor = new();
     
     // Spotlight Module
