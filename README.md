@@ -2,7 +2,7 @@
 
 Reproduit les **Espaces** (Spaces) de macOS sur Windows — une application **open-source** en C# / .NET 8 qui vit dans la barre des tâches, donne un bureau virtuel dédié à chaque application en plein écran et permet de basculer d'espace via gestes du trackpad et raccourcis clavier.
 
-> **Statut :** v3.2.1 — support complet de Windows 11 24H2, 25H2 et 26H2 (build 26100+), bureaux virtuels, hotkeys, momentum, gestes Précision Touchpad, publish single-file automatisé, et **Dashboard WPF** avec diagnostic système intégré. Thèmes Light/Dark stables avec préservation des styles de base.
+> **Statut :** v3.3.0 — support complet de Windows 11 24H2, 25H2 et 26H2 (build 26100+), bureaux virtuels, hotkeys, momentum, gestes Précision Touchpad **style macOS (3/4 doigts horizontal + vertical)**, publish single-file automatisé, et **Dashboard WPF** avec diagnostic système intégré. Thèmes Light/Dark stables avec préservation des styles de base.
 
 ## Fonctionnalités
 

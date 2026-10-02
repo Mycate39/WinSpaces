@@ -107,10 +107,10 @@ public class GestureConfig
     /// <summary>Active la détection des gestes trackpad.</summary>
     public bool Enabled { get; set; } = true;
 
-    /// <summary>Nombre minimal de doigts pour déclencher un swipe (Précision Touchpad).</summary>
+    /// <summary>Nombre minimal de doigts pour déclencher un swipe horizontal (Précision Touchpad).</summary>
     public int MinContactsForSwipe { get; set; } = 3;
 
-    /// <summary>Seuil de delta cumulé pour déclencher le swipe (Précision Touchpad).</summary>
+    /// <summary>Seuil de delta cumulé pour déclencher le swipe horizontal (Précision Touchpad).</summary>
     public int SwipeDeltaThreshold { get; set; } = 800;
 
     /// <summary>Seuil de delta pour déclencher le fling (Momentum / molette).</summary>
@@ -127,6 +127,23 @@ public class GestureConfig
 
     /// <summary>Timeout avant nouvelle session de geste (ms).</summary>
     public int NewSessionTimeoutMs { get; set; } = 200;
+
+    // === Gestes style macOS ===
+    
+    /// <summary>Active les gestes verticaux 3 doigts (Mission Control / App Exposé).</summary>
+    public bool VerticalGesturesEnabled { get; set; } = true;
+
+    /// <summary>Seuil de delta vertical pour déclencher un swipe vertical (3 doigts).</summary>
+    public int VerticalSwipeDeltaThreshold { get; set; } = 600;
+
+    /// <summary>Différencier 3 doigts (Mission Control) vs 4 doigts (Desktop switch) pour swipe horizontal.</summary>
+    public bool DifferentiateThreeFourFingers { get; set; } = true;
+
+    /// <summary>Action pour 3 doigts vers le haut (Mission Control style).</summary>
+    public string ThreeFingerUpAction { get; set; } = "ShowDashboard"; // "ShowDashboard", "None"
+
+    /// <summary>Action pour 3 doigts vers le bas (App Exposé style).</summary>
+    public string ThreeFingerDownAction { get; set; } = "None"; // "ShowDashboard", "None"
 }
 
 /// <summary>

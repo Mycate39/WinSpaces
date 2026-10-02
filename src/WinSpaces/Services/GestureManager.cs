@@ -10,6 +10,11 @@ namespace WinSpaces.Services;
 /// Orchestrateur de gestes : combine MomentumGestureDetector (molette horizontale,
 /// universel) et PrecisionTouchpadWatcher (3/4 doigts HID, spécificité Précision
 /// Touchpad). Le mode est déterminé au démarrage selon le matériel détecté.
+/// Supporte les gestes style macOS :
+/// - 3 doigts horizontal : switch espace
+/// - 4 doigts horizontal : switch bureau (différencié)
+/// - 3 doigts haut : Mission Control (dashboard)
+/// - 3 doigts bas : App Exposé
 /// </summary>
 internal sealed class GestureManager : HealthCheckableBase, IDisposable
 {
@@ -46,8 +51,17 @@ internal sealed class GestureManager : HealthCheckableBase, IDisposable
     /// <summary>Vrai si le Précision Touchpad a été trouvé à l'initialisation.</summary>
     public bool PrecisionTouchpadDetected => _precision.PrecisionTouchpadPresent;
 
-    /// <summary>Bascule d'espace demandée : -1 (précédent), +1 (suivant).</summary>
+    /// <summary>Bascule d'espace demandée (3 doigts horizontal) : -1 (précédent), +1 (suivant).</summary>
     public event EventHandler<int>? SpaceSwitchRequested;
+
+    /// <summary>Bascule de bureau demandée (4 doigts horizontal) : -1 (précédent), +1 (suivant).</summary>
+    public event EventHandler<int>? DesktopSwitchRequested;
+
+    /// <summary>Mission Control demandé (3 doigts vers le haut).</summary>
+    public event EventHandler? MissionControlRequested;
+
+    /// <summary>App Exposé demandé (3 doigts vers le bas).</summary>
+    public event EventHandler? AppExposeRequested;
 
     public void Start()
     {
@@ -55,8 +69,16 @@ internal sealed class GestureManager : HealthCheckableBase, IDisposable
 
         if (_precision.PrecisionTouchpadPresent)
         {
-            // Présence détectée : écouter le swipe 3/4 doigts.
-            _precision.SwipeDetected += (_, dir) => SpaceSwitchRequested?.Invoke(this, dir);
+            // Présence détectée : écouter les gestes Précision Touchpad.
+            _precision.SwipeDetected += (_, dir) => SpaceSwitchRequested?.Invoke(this, dir); // 3 doigts horizontal
+            _precision.FourFingerSwipeDetected += (_, dir) => DesktopSwitchRequested?.Invoke(this, dir); // 4 doigts horizontal
+            _precision.VerticalSwipeDetected += (_, dir) => 
+            {
+                // Log pour debug, mais les actions spécifiques sont gérées via ThreeFingerUp/Down
+                AppLog.Info($"VerticalSwipeDetected: direction={dir}");
+            };
+            _precision.ThreeFingerUpActionRequested += (_, _) => MissionControlRequested?.Invoke(this, EventArgs.Empty);
+            _precision.ThreeFingerDownActionRequested += (_, _) => AppExposeRequested?.Invoke(this, EventArgs.Empty);
         }
         else
         {

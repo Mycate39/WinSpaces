@@ -49,6 +49,18 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
     private long _contactStaleTicks;
     private long _newSessionTicks;
 
+    // === Gestes style macOS ===
+    private bool _verticalGesturesEnabled = true;
+    private int _verticalSwipeDeltaThreshold = 600;
+    private bool _differentiateThreeFourFingers = true;
+    private string _threeFingerUpAction = "ShowDashboard";
+    private string _threeFingerDownAction = "None";
+
+    // Suivi du mouvement vertical
+    private readonly long[] _contactY = new long[MaxContacts];
+    private long _verticalDeltaAccum;
+    private bool _verticalSwipeTriggered;
+
     private readonly MessageWindow? _sourceWindow;
 
     /// <summary>Données « preparsed » du pavé (ownership via HidD_FreePreparsedData).</summary>
@@ -84,14 +96,36 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
         _swipeDeltaThreshold = Math.Max(100, config.SwipeDeltaThreshold);
         _contactStaleTicks = MsToTicks(Math.Max(50, config.ContactStaleTimeoutMs));
         _newSessionTicks = MsToTicks(Math.Max(100, config.NewSessionTimeoutMs));
-        
-        AppLog.Info($"PrecisionTouchpadWatcher configuré : MinContacts={_minContactsForSwipe}, SwipeThreshold={_swipeDeltaThreshold}, StaleTimeout={config.ContactStaleTimeoutMs}ms, NewSessionTimeout={config.NewSessionTimeoutMs}ms");
+
+        // === Gestes style macOS ===
+        _verticalGesturesEnabled = config.VerticalGesturesEnabled;
+        _verticalSwipeDeltaThreshold = Math.Max(100, config.VerticalSwipeDeltaThreshold);
+        _differentiateThreeFourFingers = config.DifferentiateThreeFourFingers;
+        _threeFingerUpAction = config.ThreeFingerUpAction;
+        _threeFingerDownAction = config.ThreeFingerDownAction;
+
+        AppLog.Info($"PrecisionTouchpadWatcher configuré : MinContacts={_minContactsForSwipe}, SwipeThreshold={_swipeDeltaThreshold}, VerticalEnabled={_verticalGesturesEnabled}, VerticalThreshold={_verticalSwipeDeltaThreshold}, Differentiate3_4={_differentiateThreeFourFingers}, 3FingerUp={_threeFingerUpAction}, 3FingerDown={_threeFingerDownAction}, StaleTimeout={config.ContactStaleTimeoutMs}ms, NewSessionTimeout={config.NewSessionTimeoutMs}ms");
     }
 
     /// <summary>true si un Précision Touchpad est présent dans le système.</summary>
     public bool PrecisionTouchpadPresent { get; private set; }
 
+    // === Gestes horizontaux (style macOS) ===
+    /// <summary>Swipe horizontal détecté : -1 (gauche/précédent), +1 (droite/suivant).</summary>
     public event EventHandler<int>? SwipeDetected;
+
+    /// <summary>Swipe horizontal 4 doigts détecté (différencié du 3 doigts si configuré).</summary>
+    public event EventHandler<int>? FourFingerSwipeDetected;
+
+    // === Gestes verticaux (style macOS Mission Control / App Exposé) ===
+    /// <summary>Swipe vertical 3 doigts détecté : -1 (bas/App Exposé), +1 (haut/Mission Control).</summary>
+    public event EventHandler<int>? VerticalSwipeDetected;
+
+    /// <summary>Action 3 doigts vers le haut (Mission Control style).</summary>
+    public event EventHandler? ThreeFingerUpActionRequested;
+
+    /// <summary>Action 3 doigts vers le bas (App Exposé style).</summary>
+    public event EventHandler? ThreeFingerDownActionRequested;
 
     public void Start()
     {
@@ -337,6 +371,9 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
         if (_lastReportTs != 0 && now - _lastReportTs > _newSessionTicks)
         {
             _deltaAccum = 0;
+            _verticalDeltaAccum = 0;
+            _swipeTriggered = false;
+            _verticalSwipeTriggered = false;
             if (!_haveContactCount) _activeIds.Clear();
         }
         _lastReportTs = now;
@@ -353,7 +390,7 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
             _activeContactCount = Math.Clamp((int)contactCount, 1, 10);
         }
 
-        // 2) Rapport de contact : identifiant + position X (+ état du contact).
+        // 2) Rapport de contact : identifiant + position X + position Y (+ état du contact).
         if (TryGetUsage(RawInputConstants.USAGE_PAGE_DIGITIZER,
                 RawInputConstants.USAGE_CONTACT_IDENTIFIER, reportPtr, reportLen, out uint contactIdRaw))
         {
@@ -380,18 +417,42 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
                 _contactX[id] = x;
                 _contactTs[id] = now;
             }
+
+            // Position Y : pour les gestes verticaux (Mission Control / App Exposé style macOS)
+            if (TryGetUsage(RawInputConstants.USAGE_PAGE_GENERIC_DESKTOP,
+                    RawInputConstants.USAGE_Y, reportPtr, reportLen, out uint yv)
+                || TryGetUsage(RawInputConstants.USAGE_PAGE_DIGITIZER,
+                    RawInputConstants.USAGE_Y, reportPtr, reportLen, out yv))
+            {
+                long y = yv;
+                if (_contactTs[id] != 0 && now - _contactTs[id] <= _contactStaleTicks)
+                {
+                    long d = y - _contactY[id];
+                    if (Math.Abs(d) < _maxContactStep)
+                        _verticalDeltaAccum += d;
+                }
+                _contactY[id] = y;
+                _contactTs[id] = now;
+            }
         }
 
         // 3) Décision de balayage.
         int count = _haveContactCount ? _activeContactCount : _activeIds.Count;
 
+        // Pas assez de doigts : on remet à zéro et on ré-arme le geste.
         if (count < _minContactsForSwipe)
         {
-            // Pas assez de doigts : on remet à zéro et on ré-arme le geste.
             _deltaAccum = 0;
+            _verticalDeltaAccum = 0;
             _swipeTriggered = false;
+            _verticalSwipeTriggered = false;
             return;
         }
+
+        // === GESTES HORIZONTAUX (switch bureau) ===
+        
+        // Si différenciation 3 vs 4 doigts activée et 4+ doigts
+        bool isFourFingerSwipe = _differentiateThreeFourFingers && count >= 4;
 
         if (_swipeTriggered)
         {
@@ -410,7 +471,47 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
             _deltaAccum = 0;
 
             AppLog.Info($"Swipe {count} doigts → espace {(direction > 0 ? "suivant" : "précédent")}.");
-            SwipeDetected?.Invoke(this, direction);
+
+            // Différencier 3 doigts vs 4 doigts si configuré
+            if (isFourFingerSwipe)
+            {
+                FourFingerSwipeDetected?.Invoke(this, direction);
+            }
+            else
+            {
+                SwipeDetected?.Invoke(this, direction);
+            }
+        }
+
+        // === GESTES VERTICAUX (Mission Control / App Exposé style macOS) ===
+        if (_verticalGesturesEnabled && count >= 3 && !_verticalSwipeTriggered)
+        {
+            if (Math.Abs(_verticalDeltaAccum) >= _verticalSwipeDeltaThreshold)
+            {
+                // Delta positif (mouvement vers le bas sur trackpad) = App Exposé (-1)
+                // Delta négatif (mouvement vers le haut sur trackpad) = Mission Control (+1)
+                // Note: sur trackpad macOS, swipe UP = doigts vers le haut = Mission Control
+                // Sur Windows, Y augmente vers le bas, donc delta négatif = vers le haut
+                int direction = _verticalDeltaAccum < 0 ? 1 : -1; // +1 = haut (Mission Control), -1 = bas (App Exposé)
+                _verticalSwipeTriggered = true;
+                _verticalDeltaAccum = 0;
+
+                AppLog.Info($"Vertical swipe {count} doigts → {(direction > 0 ? "haut (Mission Control)" : "bas (App Exposé)")}.");
+                VerticalSwipeDetected?.Invoke(this, direction);
+
+                // Déclencher les actions spécifiques 3 doigts
+                if (count == 3 || (!_differentiateThreeFourFingers && count >= 3))
+                {
+                    if (direction > 0 && _threeFingerUpAction == "ShowDashboard")
+                    {
+                        ThreeFingerUpActionRequested?.Invoke(this, EventArgs.Empty);
+                    }
+                    else if (direction < 0 && _threeFingerDownAction == "ShowDashboard")
+                    {
+                        ThreeFingerDownActionRequested?.Invoke(this, EventArgs.Empty);
+                    }
+                }
+            }
         }
     }
 

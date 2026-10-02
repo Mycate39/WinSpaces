@@ -143,6 +143,10 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
         _hotkeys.MoveWindowRequested += (_, _) => MoveForegroundWindowToNextDesktop();
 
         _gestures.SpaceSwitchRequested += (_, dir) => _vds.SwitchByOffset(dir);
+        _gestures.DesktopSwitchRequested += (_, dir) => _vds.SwitchByOffset(dir);
+
+        _gestures.MissionControlRequested += (_, _) => ShowDashboard();
+        _gestures.AppExposeRequested += (_, _) => ShowDashboard(); // Pour l'instant même action que Mission Control
 
         _tray.DashboardRequested += ShowDashboard;
         _tray.NextSpaceRequested += () => _vds.SwitchByOffset(1);

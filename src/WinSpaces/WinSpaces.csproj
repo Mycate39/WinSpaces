@@ -12,7 +12,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
-    <Version>3.2.1</Version>
+    <Version>3.3.0</Version>
     <Authors>WinSpaces contributors</Authors>
     <Description>macOS Spaces pour Windows — bureaux virtuels avec plein écran auto, gestes trackpad et dashboard WPF</Description>
     <Platforms>x64</Platforms>
