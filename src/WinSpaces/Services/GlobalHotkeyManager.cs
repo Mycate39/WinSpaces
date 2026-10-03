@@ -13,7 +13,10 @@ internal sealed class GlobalHotkeyManager : HealthCheckableBase, IDisposable
 {
     private readonly MessageWindow _window;
     private readonly Dictionary<int, Action> _handlers = new();
-    private int _nextId = 0xB01;
+    // Plage distincte de HotkeyService (0xB01–0xB04), qui partage la même
+    // fenêtre : un id commun ferait déclencher les deux gestionnaires sur le
+    // même WM_HOTKEY (Alt+Espace changeait aussi d'espace, etc.).
+    private int _nextId = 0xC001;
 
     private string _statusMessage = "Actif : 0 raccourcis enregistrés";
 
@@ -54,7 +57,8 @@ internal sealed class GlobalHotkeyManager : HealthCheckableBase, IDisposable
             int id = m.WParam.ToInt32();
             if (_handlers.TryGetValue(id, out var handler))
             {
-                handler();
+                try { handler(); }
+                catch (Exception ex) { AppLog.Error(ex); }
             }
         }
     }

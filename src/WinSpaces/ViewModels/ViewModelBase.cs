@@ -17,7 +17,9 @@ public abstract class ViewModelBase : INotifyPropertyChanged
     {
         if (Application.Current?.Dispatcher?.CheckAccess() == false)
         {
-            Application.Current.Dispatcher.Invoke(() => 
+            // Asynchrone : un Invoke synchrone depuis un thread de fond bloquait ce
+            // thread tant que l'UI était occupée (deadlock si l'UI l'attendait).
+            Application.Current.Dispatcher.BeginInvoke(() =>
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName)));
         }
         else

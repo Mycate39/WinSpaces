@@ -7,7 +7,9 @@ namespace WinSpaces.Modules.Widgets.BuiltIn;
 /// </summary>
 public sealed class WeatherWidget : WidgetBase
 {
-    public override string Id => "weather-" + Guid.NewGuid().ToString("N")[..8];
+    // Calculé une seule fois : un « => » générait un nouvel Id à chaque lecture,
+    // rendant RemoveWidgetAsync(widget.Id) inopérant.
+    public override string Id { get; } = "weather-" + Guid.NewGuid().ToString("N")[..8];
     public override string Name => "Météo";
     public override string Description => "Conditions météo actuelles";
     public override double Width => 200;

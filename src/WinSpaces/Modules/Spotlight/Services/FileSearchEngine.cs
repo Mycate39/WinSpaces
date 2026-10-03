@@ -40,6 +40,13 @@ public sealed class FileSearchEngine : HealthCheckableBase
         if (string.IsNullOrWhiteSpace(query) || query.Length < 2)
             return Enumerable.Empty<FileEntry>();
 
+        // La saisie sert de motif de recherche : jokers, séparateurs ou caractères
+        // interdits levaient une ArgumentException (journalisée à chaque frappe) ou
+        // élargissaient la recherche hors des dossiers prévus (« ..\ »).
+        if (query.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || query.Contains("..")
+            || query.Contains('*') || query.Contains('?'))
+            return Enumerable.Empty<FileEntry>();
+
         var results = new List<FileEntry>();
         var queryLower = query.ToLowerInvariant();
         var sw = Stopwatch.StartNew();
@@ -52,7 +59,8 @@ public sealed class FileSearchEngine : HealthCheckableBase
 
                 try
                 {
-                    var files = Directory.GetFiles(basePath, $"*{query}*", SearchOption.TopDirectoryOnly)
+                    // Enumerate (paresseux) : GetFiles listait tout le dossier avant le Take.
+                    var files = Directory.EnumerateFiles(basePath, $"*{query}*", SearchOption.TopDirectoryOnly)
                         .Take(maxResults - results.Count);
 
                     foreach (var file in files)

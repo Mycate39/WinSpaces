@@ -1,8 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Windows; // Pour System.Windows.Application et ShutdownMode
-using System.Windows.Interop; // Pour ComponentDispatcher
-using System.Windows.Forms; // Pour IMessageFilter
-using System.Windows.Threading; // Pour DispatcherPriority
+using System.Windows.Forms.Integration; // Pour ElementHost.EnableModelessKeyboardInterop
+using System.Windows.Threading; // Pour Dispatcher
 using WinSpaces.Desktops;
 using WinSpaces.Native;
 using WinSpaces.Services;
@@ -57,9 +56,6 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
 
     // Instance de l'application WPF - CRITICAL pour les fenêtres WPF, ressources, bindings, etc.
     private System.Windows.Application? _wpfApp;
-    
-    // Message filter pour pomper le dispatcher WPF depuis la boucle WinForms
-    private WpfMessageFilter? _wpfMessageFilter;
 
     public HealthMonitor HealthMonitor => _healthMonitor;
 
@@ -71,17 +67,24 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
         {
             _wpfApp = new System.Windows.Application();
             _wpfApp.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-            // Ne pas appeler Run() car on utilise WinForms Application.Run(context)
-            // Le dispatcher WPF sera pompé par la boucle de messages WinForms via IMessageFilter
+            // Ne pas appeler Run() car on utilise WinForms Application.Run(context).
+            // Aucun pompage manuel n'est nécessaire : le Dispatcher WPF poste ses
+            // opérations (BeginInvoke, DispatcherTimer, rendu) à sa fenêtre cachée,
+            // que la boucle WinForms distribue comme n'importe quel message.
+            // L'ancien IMessageFilter faisait un Dispatcher.Invoke SYNCHRONE à chaque
+            // message Win32 : boucle imbriquée (ré-entrance) et vidage complet de la
+            // file WPF pour chaque WM_INPUT / mouvement de souris.
+            LoadSharedResources(_wpfApp);
         }
         else
         {
             _wpfApp = System.Windows.Application.Current;
         }
-        
-        // Installer le message filter pour pomper le dispatcher WPF
-        _wpfMessageFilter = new WpfMessageFilter();
-        System.Windows.Forms.Application.AddMessageFilter(_wpfMessageFilter);
+
+        // Sans Run(), une exception levée dans une opération du Dispatcher (binding,
+        // commande, Clipboard…) remonterait jusqu'à la boucle WinForms et tuerait
+        // l'application : on la journalise et on continue.
+        Dispatcher.CurrentDispatcher.UnhandledException += OnDispatcherUnhandledException;
 
         _vds = new VirtualDesktopService();
         _msgWindow = new MessageWindow();
@@ -93,7 +96,7 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
         _hotkeys = new HotkeyService(_msgWindow, _vds);
         _globalHotkeys = new GlobalHotkeyManager(_msgWindow);
         _gestures = new GestureManager(_msgWindow, _vds, _configurationService);
-        _fullscreen = new FullscreenSpaceManager(_vds);
+        _fullscreen = new FullscreenSpaceManager(_vds, _options);
         _tray = new TrayIconService(_options);
         
         // Spotlight Module
@@ -131,6 +134,36 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
     
 
 
+    /// <summary>
+    /// App.xaml n'est jamais chargé (on instancie une Application nue, pas la
+    /// classe générée) : sans ceci, les StaticResource partagées (CornerRadius*,
+    /// Padding*, CardStyle…) utilisées par MenuBarWindow et SpotlightWindow sont
+    /// introuvables et lèvent une XamlParseException.
+    /// </summary>
+    private static void LoadSharedResources(System.Windows.Application app)
+    {
+        foreach (var path in new[] { "Styles.xaml", "Modules/Theming/Themes/WindowStyles.xaml" })
+        {
+            try
+            {
+                app.Resources.MergedDictionaries.Add(new ResourceDictionary
+                {
+                    Source = new Uri($"pack://application:,,,/WinSpaces;component/{path}")
+                });
+            }
+            catch (Exception ex)
+            {
+                AppLog.Error(new InvalidOperationException($"Chargement ressources {path} impossible", ex));
+            }
+        }
+    }
+
+    private static void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
+    {
+        AppLog.Error(new InvalidOperationException("Exception non gérée sur le Dispatcher WPF", e.Exception));
+        e.Handled = true;
+    }
+
     private void WireEvents()
     {
         _hotkeys.NextSpaceRequested += (_, _) => _vds.SwitchByOffset(1);
@@ -142,11 +175,12 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
         };
         _hotkeys.MoveWindowRequested += (_, _) => MoveForegroundWindowToNextDesktop();
 
-        _gestures.SpaceSwitchRequested += (_, dir) => _vds.SwitchByOffset(dir);
-        _gestures.DesktopSwitchRequested += (_, dir) => _vds.SwitchByOffset(dir);
+        // L'option « Gestes trackpad » du tray n'était lue nulle part.
+        _gestures.SpaceSwitchRequested += (_, dir) => { if (_options.GesturesEnabled) _vds.SwitchByOffset(dir); };
+        _gestures.DesktopSwitchRequested += (_, dir) => { if (_options.GesturesEnabled) _vds.SwitchByOffset(dir); };
 
-        _gestures.MissionControlRequested += (_, _) => ShowDashboard();
-        _gestures.AppExposeRequested += (_, _) => ShowDashboard(); // Pour l'instant même action que Mission Control
+        _gestures.MissionControlRequested += (_, _) => { if (_options.GesturesEnabled) ShowDashboard(); };
+        _gestures.AppExposeRequested += (_, _) => { if (_options.GesturesEnabled) ShowDashboard(); }; // Pour l'instant même action que Mission Control
 
         _tray.DashboardRequested += ShowDashboard;
         _tray.NextSpaceRequested += () => _vds.SwitchByOffset(1);
@@ -202,7 +236,7 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
         AppLog.Info("WinSpacesApplicationContext: MenuBar service started.");
         ShowMenuBar();
         
-        _tray.ShowInfo("WinSpaces v2.5.3",
+        _tray.ShowInfo($"WinSpaces v{System.Windows.Forms.Application.ProductVersion.Split('+')[0]}",
             "Ctrl+Alt+←/→ pour changer d'espace | Alt+Espace pour Spotlight");
     }
 
@@ -212,6 +246,7 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
         {
             var vm = new MainViewModel(_vds, _healthMonitor, _options);
             _mainWindow = new MainWindow(vm);
+            ElementHost.EnableModelessKeyboardInterop(_mainWindow);
             _mainWindow.Closed += (_, _) => _mainWindow = null;
         }
 
@@ -243,6 +278,9 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
         {
             var vm = new SpotlightViewModel(_spotlightService);
             _spotlightWindow = new SpotlightWindow(vm);
+            // Fenêtre WPF hors de Application.Run : sans cette interop, la
+            // navigation clavier (Tab, raccourcis) n'est pas acheminée à WPF.
+            ElementHost.EnableModelessKeyboardInterop(_spotlightWindow);
             _spotlightWindow.Closed += (_, _) => _spotlightWindow = null;
         }
 
@@ -276,99 +314,50 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
         if (_disposed) return;
         _disposed = true;
 
-        try
-        {
-            // Arrêter les services de premier plan avant de fermer les fenêtres
-            _wallpaperMonitor.Dispose();
-            _menuBarService.Stop();
-            _widgetManager.SaveStateAndCloseAll();
+        // Chaque étape est isolée : auparavant, une seule exception (ex. fenêtre
+        // déjà détruite) sautait tout le reste — hooks globaux, raccourcis et
+        // icône du tray restaient alors actifs.
+        Safe(_wallpaperMonitor.Dispose);
+        Safe(_menuBarService.Stop);
+        Safe(_widgetManager.SaveStateAndCloseAll);
 
-            if (_menuBarWindow != null)
-            {
-                _menuBarWindow.Close();
-                _menuBarWindow = null;
-            }
+        Safe(() => { _menuBarWindow?.Close(); _menuBarWindow = null; });
+        Safe(() => { _spotlightWindow?.Close(); _spotlightWindow = null; });
+        // MainWindow annule Close() (masquage dans le tray) : fermeture forcée.
+        Safe(() => { _mainWindow?.ForceClose(); _mainWindow = null; });
 
-            if (_spotlightWindow != null)
-            {
-                _spotlightWindow.Close();
-                _spotlightWindow = null;
-            }
+        Safe(_spotlightService.Dispose);
+        Safe(_menuBarService.Dispose);
+        Safe(_globalHotkeys.Dispose);
+        Safe(_tray.Dispose);
+        Safe(_fullscreen.Dispose);
+        Safe(_gestures.Dispose);
+        Safe(_hotkeys.Dispose);
+        Safe(_configurationService.Dispose);
+        Safe(_vds.Dispose);
+        Safe(_msgWindow.DestroyHandle);
 
-            if (_mainWindow != null)
-            {
-                _mainWindow.Close();
-                _mainWindow = null;
-            }
+        Safe(() => Dispatcher.CurrentDispatcher.UnhandledException -= OnDispatcherUnhandledException);
 
-            _spotlightService.Dispose();
-            _menuBarService.Dispose();
-            _globalHotkeys.Dispose();
-            _tray.Dispose();
-            _fullscreen.Dispose();
-            _gestures.Dispose();
-            _hotkeys.Dispose();
-            _vds.Dispose();
-            _msgWindow.DestroyHandle();
+        // Arrêter proprement l'application WPF
+        Safe(() => { _wpfApp?.Shutdown(); _wpfApp = null; });
 
-            // Retirer le message filter WPF
-            if (_wpfMessageFilter != null)
-            {
-                System.Windows.Forms.Application.RemoveMessageFilter(_wpfMessageFilter);
-                _wpfMessageFilter = null;
-            }
+        ExitThread();
+    }
 
-            // Arrêter proprement l'application WPF
-            if (_wpfApp != null)
-            {
-                try
-                {
-                    _wpfApp.Shutdown();
-                }
-                catch (Exception ex)
-                {
-                    AppLog.Error(new InvalidOperationException("Erreur arrêt WPF Application", ex));
-                }
-                _wpfApp = null;
-            }
-        }
-        catch (Exception ex)
-        {
-            AppLog.Error(ex);
-        }
-        finally
-        {
-            ExitThread();
-        }
+    private static void Safe(Action step)
+    {
+        try { step(); }
+        catch (Exception ex) { AppLog.Error(ex); }
     }
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing && !_disposed)
-        {
-            _disposed = true;
+        // Ne PAS positionner _disposed ici : ExitApplication() sortait aussitôt et
+        // rien n'était libéré quand Application.Run se terminait autrement que par
+        // « Quitter » (fermeture de session…), laissant une icône fantôme.
+        if (disposing)
             ExitApplication();
-        }
         base.Dispose(disposing);
-    }
-}
-
-/// <summary>
-/// Message filter pour pomper le dispatcher WPF depuis la boucle de messages WinForms.
-/// Cela permet aux DispatcherTimer, bindings, et événements WPF de fonctionner correctement
-/// quand on utilise Application.Run() de WinForms au lieu de WPF Application.Run().
-/// </summary>
-internal sealed class WpfMessageFilter : IMessageFilter
-{
-    public bool PreFilterMessage(ref Message m)
-    {
-        // Pomper le dispatcher WPF pour traiter les messages en attente
-        if (System.Windows.Application.Current != null)
-        {
-            System.Windows.Application.Current.Dispatcher.Invoke(
-                System.Windows.Threading.DispatcherPriority.Background,
-                new Action(() => { }));
-        }
-        return false; // Ne pas consommer le message
     }
 }

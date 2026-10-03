@@ -12,7 +12,9 @@ public sealed class SystemMonitorWidget : WidgetBase
     private readonly PerformanceCounter? _cpuCounter;
     private readonly PerformanceCounter? _ramCounter;
 
-    public override string Id => "system-monitor-" + Guid.NewGuid().ToString("N")[..8];
+    // Calculé une seule fois : un « => » générait un nouvel Id à chaque lecture,
+    // rendant RemoveWidgetAsync(widget.Id) inopérant.
+    public override string Id { get; } = "system-monitor-" + Guid.NewGuid().ToString("N")[..8];
     public override string Name => "System Monitor";
     public override string Description => "Affiche l'utilisation CPU et RAM en temps réel";
     public override double Width => 200;

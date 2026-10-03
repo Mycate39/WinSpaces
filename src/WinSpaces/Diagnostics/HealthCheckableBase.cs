@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+
 namespace WinSpaces.Diagnostics;
 
 /// <summary>
@@ -6,7 +8,9 @@ namespace WinSpaces.Diagnostics;
 /// </summary>
 public abstract class HealthCheckableBase : IHealthCheckable
 {
-    private readonly Dictionary<string, object> _metrics = new();
+    // Concurrent : certains services publient leurs métriques depuis le pool de
+    // threads (indexation Spotlight…) pendant que le dashboard les énumère.
+    private readonly ConcurrentDictionary<string, object> _metrics = new();
     
     protected HealthCheckableBase()
     {
@@ -44,7 +48,7 @@ public abstract class HealthCheckableBase : IHealthCheckable
     /// </summary>
     protected void RemoveMetric(string key)
     {
-        _metrics.Remove(key);
+        _metrics.TryRemove(key, out _);
         LastCheck = DateTime.UtcNow;
     }
 

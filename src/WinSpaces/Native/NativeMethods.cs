@@ -139,11 +139,4 @@ internal static class NativeMethods
     internal static extern uint HidP_GetUsages(
         uint reportType, ushort usagePage, ushort linkCollection,
         [Out] ushort[] usageList, ref uint usageLength, IntPtr preparsedData, IntPtr report, uint reportLength);
-
-    // --- HID preparsed data (hid.dll) --------------------------------------
-    [DllImport(Hid, SetLastError = true)]
-    internal static extern bool HidD_GetPreparsedData(IntPtr hDevice, out IntPtr preparsedData);
-
-    [DllImport(Hid, SetLastError = true)]
-    internal static extern bool HidD_FreePreparsedData(IntPtr preparsedData);
 }

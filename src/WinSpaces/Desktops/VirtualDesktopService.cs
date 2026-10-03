@@ -62,8 +62,9 @@ public sealed class VirtualDesktopService : HealthCheckableBase, IDisposable
                 {
                     var iid = DesktopGuid;
                     desktops.GetAt(i, ref iid, out object obj);
-                    if (obj is not null)
-                        result.Add(GetId(obj));
+                    if (obj is null) continue;
+                    try { result.Add(GetId(obj)); }
+                    finally { ReleaseRcw(obj); }
                 }
             }
             finally
@@ -78,6 +79,23 @@ public sealed class VirtualDesktopService : HealthCheckableBase, IDisposable
 
         return result;
     }
+
+    /// <summary>
+    /// Libère immédiatement un RCW obtenu de l'Explorer (évite d'attendre le
+    /// finaliseur, qui doit re-marshaller la libération vers ce thread STA).
+    /// </summary>
+    private static void ReleaseRcw(object? rcw)
+    {
+        if (rcw is not null && Marshal.IsComObject(rcw))
+            Marshal.ReleaseComObject(rcw);
+    }
+
+    /// <summary>
+    /// GetAdjacentDesktop attend une direction AdjacentDesktop (3 = gauche,
+    /// 4 = droite), et non -1/+1 qui renvoient E_INVALIDARG.
+    /// </summary>
+    private const int AdjacentLeft = 3;
+    private const int AdjacentRight = 4;
 
     /// <summary>GUID de l'interface IVirtualDesktop correspondant au schéma actif.</summary>
     private Guid DesktopGuid
@@ -194,6 +212,7 @@ public sealed class VirtualDesktopService : HealthCheckableBase, IDisposable
     public bool SwitchByOffset(int offset)
     {
         if (offset != -1 && offset != 1) return false;
+        int direction = offset < 0 ? AdjacentLeft : AdjacentRight;
 
         try
         {
@@ -203,7 +222,7 @@ public sealed class VirtualDesktopService : HealthCheckableBase, IDisposable
                 if (current is null) return false;
                 try
                 {
-                    int hr = _w11New.GetAdjacentDesktop(current, offset, out var target);
+                    int hr = _w11New.GetAdjacentDesktop(current, direction, out var target);
                     if (hr != 0 || target is null) return false;
                     try { _w11New.SwitchDesktopAndMoveForegroundView(target); return true; }
                     finally { Marshal.ReleaseComObject(target); }
@@ -216,7 +235,7 @@ public sealed class VirtualDesktopService : HealthCheckableBase, IDisposable
                 if (current is null) return false;
                 try
                 {
-                    int hr = _w11Last.GetAdjacentDesktop(current, offset, out var target);
+                    int hr = _w11Last.GetAdjacentDesktop(current, direction, out var target);
                     if (hr != 0 || target is null) return false;
                     try { _w11Last.SwitchDesktop(target); return true; }
                     finally { Marshal.ReleaseComObject(target); }
@@ -229,7 +248,7 @@ public sealed class VirtualDesktopService : HealthCheckableBase, IDisposable
                 if (current is null) return false;
                 try
                 {
-                    int hr = _w10.GetAdjacentDesktop(current, offset, out var target);
+                    int hr = _w10.GetAdjacentDesktop(current, direction, out var target);
                     if (hr != 0 || target is null) return false;
                     try { _w10.SwitchDesktop(target); return true; }
                     finally { Marshal.ReleaseComObject(target); }
@@ -286,6 +305,10 @@ public sealed class VirtualDesktopService : HealthCheckableBase, IDisposable
     /// </summary>
     public bool RemoveDesktop(Guid id, Guid fallbackId)
     {
+        // Même bureau : FindDesktop renverrait le même RCW deux fois et le
+        // double ReleaseComObject ci-dessous l'invaliderait.
+        if (id == Guid.Empty || id == fallbackId) return false;
+
         try
         {
             var target = FindDesktop(id);
@@ -425,8 +448,10 @@ public sealed class VirtualDesktopService : HealthCheckableBase, IDisposable
             {
                 var iid = DesktopGuid;
                 desktops.GetAt(i, ref iid, out object obj);
-                if (obj is not null && GetId(obj) == id)
+                if (obj is null) continue;
+                if (GetId(obj) == id)
                     return obj;
+                ReleaseRcw(obj);
             }
         }
         finally
@@ -465,7 +490,13 @@ public sealed class VirtualDesktopService : HealthCheckableBase, IDisposable
             if (shellInstance != null)
             {
                 var iidProvider = typeof(IServiceProvider10).GUID;
-                int hr = Marshal.QueryInterface(Marshal.GetIUnknownForObject(shellInstance), ref iidProvider, out IntPtr ppv);
+                // GetIUnknownForObject fait un AddRef : il faut le Release, sinon
+                // l'instance du Shell immersif fuit une référence à chaque Initialize.
+                IntPtr unk = Marshal.GetIUnknownForObject(shellInstance);
+                int hr;
+                IntPtr ppv;
+                try { hr = Marshal.QueryInterface(unk, ref iidProvider, out ppv); }
+                finally { Marshal.Release(unk); }
                 if (hr == 0 && ppv != IntPtr.Zero)
                 {
                     provider = Marshal.GetObjectForIUnknown(ppv) as IServiceProvider10;
@@ -504,6 +535,10 @@ public sealed class VirtualDesktopService : HealthCheckableBase, IDisposable
             {
                 AppLog.Error(new Exception("Shell immersif sans IServiceProvider10 (Windows 10 < 1809 ?)."));
             }
+
+            // Les services résolus détiennent leurs propres références : le
+            // provider (même RCW que shellInstance) n'est plus utile.
+            ReleaseRcw(shellInstance);
 
             // API officielle (documentée) : fallback + vérification par fenêtre.
             var officialType = Type.GetTypeFromCLSID(Guids.CLSID_VirtualDesktopManager);
@@ -574,17 +609,11 @@ public sealed class VirtualDesktopService : HealthCheckableBase, IDisposable
         if (_disposed) return;
         _disposed = true;
 
-        static void Release(object? rcw)
-        {
-            if (rcw is not null && Marshal.IsComObject(rcw))
-                Marshal.ReleaseComObject(rcw);
-        }
-
-        Release(_w11Last);
-        Release(_w11New);
-        Release(_w10);
-        Release(_viewCollection);
-        Release(_official);
+        ReleaseRcw(_w11Last);
+        ReleaseRcw(_w11New);
+        ReleaseRcw(_w10);
+        ReleaseRcw(_viewCollection);
+        ReleaseRcw(_official);
         _w11Last = null;
         _w11New = null;
         _w10 = null;

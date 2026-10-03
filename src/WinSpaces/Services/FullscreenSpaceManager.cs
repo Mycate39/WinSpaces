@@ -17,8 +17,8 @@ internal sealed class FullscreenSpaceManager : HealthCheckableBase, IDisposable
 {
     // IHealthCheckable Implementation
     public override string ComponentName => "Fullscreen & Maximized Manager";
-    public override bool IsHealthy => _hook.IsActive;
-    public override string StatusMessage => _hook.IsActive ? "Actif : hook événements système opérationnel" : "Inactif : hook non initialisé";
+    public override bool IsHealthy => _foregroundHook.IsActive && _locationHook.IsActive;
+    public override string StatusMessage => IsHealthy ? "Actif : hook événements système opérationnel" : "Inactif : hook non initialisé";
     private const int PollMs = 600;
     private const int MinGapMs = 1100;
     private const int GeoTol = 6;
@@ -29,15 +29,25 @@ internal sealed class FullscreenSpaceManager : HealthCheckableBase, IDisposable
     };
 
     private readonly VirtualDesktopService _vds;
-    private readonly WindowEventHook _hook = new();
+    private readonly AppOptions _options;
+    // Deux hooks ciblés : un seul hook FOREGROUND..LOCATIONCHANGE (0x0003..0x800B)
+    // abonnait le processus à des dizaines de milliers de types d'événements
+    // (création, focus, nom, valeur… de tous les objets du système).
+    private readonly WindowEventHook _foregroundHook = new();
+    private readonly WindowEventHook _locationHook = new();
     private readonly System.Windows.Forms.Timer _poll;
     private readonly Dictionary<IntPtr, SpaceSession> _sessions = new();
     private DateTime _lastActionUtc = DateTime.MinValue;
-    private int _checkCounter = 0;
 
-    public FullscreenSpaceManager(VirtualDesktopService vds)
+    // Les appels COM vers l'Explorer pompent les messages (STA) : un WinEvent
+    // peut alors ré-entrer dans Eval avant que la session ne soit enregistrée,
+    // et créer un second bureau pour la même fenêtre.
+    private bool _evaluating;
+
+    public FullscreenSpaceManager(VirtualDesktopService vds, AppOptions options)
     {
         _vds = vds;
+        _options = options;
         _poll = new System.Windows.Forms.Timer { Interval = PollMs };
         _poll.Tick += (_, _) => Check();
     }
@@ -48,40 +58,74 @@ internal sealed class FullscreenSpaceManager : HealthCheckableBase, IDisposable
     public void Start()
     {
         // On écoute le changement de focus et les changements de position/taille (maximisation)
-        _hook.Start(WinEventConstants.EVENT_SYSTEM_FOREGROUND, WinEventConstants.EVENT_OBJECT_LOCATIONCHANGE,
-            (_, ev, hwnd, idObj, _, _, _) => 
-            { 
-                if (idObj == 0 && (ev == WinEventConstants.EVENT_SYSTEM_FOREGROUND || ev == WinEventConstants.EVENT_OBJECT_LOCATIONCHANGE))
-                    Eval(hwnd); 
-            });
+        _foregroundHook.Start(WinEventConstants.EVENT_SYSTEM_FOREGROUND, WinEventConstants.EVENT_SYSTEM_FOREGROUND, OnWinEvent);
+        _locationHook.Start(WinEventConstants.EVENT_OBJECT_LOCATIONCHANGE, WinEventConstants.EVENT_OBJECT_LOCATIONCHANGE, OnWinEvent);
         _poll.Start();
         AppLog.Info("FullscreenSpaceManager démarré (Plein écran & Maximisation).");
     }
 
-    private void Check() => Eval(NativeMethods.GetForegroundWindow());
+    private void OnWinEvent(IntPtr hook, uint ev, IntPtr hwnd, int idObject, int idChild, uint thread, uint time)
+    {
+        // Callback natif : une exception qui s'en échapperait tuerait le processus.
+        try
+        {
+            if (idObject != 0) return; // OBJID_WINDOW uniquement (pas curseur, caret…)
+            // Seule la fenêtre au premier plan peut entrer en plein écran « à la
+            // macOS » ; sans ce filtre, une fenêtre maximisée en arrière-plan qui
+            // bouge déclenchait la création d'un bureau.
+            if (ev == WinEventConstants.EVENT_OBJECT_LOCATIONCHANGE && hwnd != NativeMethods.GetForegroundWindow())
+                return;
+            Eval(hwnd);
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error(ex);
+        }
+    }
+
+    private void Check()
+    {
+        // Fenêtres isolées fermées entre-temps : sans ce balayage, leur session
+        // (et le bureau dédié) restaient orphelins jusqu'à la fin du processus.
+        if (_evaluating) return;
+        _evaluating = true;
+        try
+        {
+            foreach (var dead in _sessions.Values.Where(x => !NativeMethods.IsWindow(x.WindowHandle)).ToList())
+                End(dead);
+        }
+        finally
+        {
+            _evaluating = false;
+        }
+
+        Eval(NativeMethods.GetForegroundWindow());
+    }
 
     private void Eval(IntPtr hwnd)
     {
-        if (hwnd == IntPtr.Zero || !_vds.IsInternalApiAvailable) return;
+        if (hwnd == IntPtr.Zero || !_vds.IsInternalApiAvailable || _evaluating) return;
 
-        bool currentlyIsolated = _sessions.TryGetValue(hwnd, out var s);
-        bool shouldBeIsolated = IsEligible(hwnd);
-
-        if (currentlyIsolated && !shouldBeIsolated)
+        _evaluating = true;
+        try
         {
-            End(s!);
-            return;
+            bool currentlyIsolated = _sessions.TryGetValue(hwnd, out var s);
+            if (currentlyIsolated && !IsEligible(hwnd))
+            {
+                End(s!);
+                return;
+            }
+
+            if (!currentlyIsolated && _options.FullscreenSpacesEnabled && IsEligible(hwnd))
+            {
+                // Éviter de traiter si l'action est trop récente (anti-rebond)
+                if ((DateTime.UtcNow - _lastActionUtc).TotalMilliseconds < MinGapMs) return;
+                Begin(hwnd);
+            }
         }
-
-        if (!currentlyIsolated && shouldBeIsolated)
+        finally
         {
-            // Éviter de traiter si l'action est trop récente (anti-rebond)
-            if ((DateTime.UtcNow - _lastActionUtc).TotalMilliseconds < MinGapMs) return;
-            
-            // On ne crée pas d'espace si la fenêtre est déjà "seule" ou si elle est sur un bureau qu'on ne gère pas
-            // (Note : On pourrait complexifier ici pour vérifier si le bureau actuel contient d'autres fenêtres visibles)
-            
-            Begin(hwnd);
+            _evaluating = false;
         }
     }
 
@@ -128,6 +172,8 @@ internal sealed class FullscreenSpaceManager : HealthCheckableBase, IDisposable
         {
             if (_vds.CurrentDesktopId == s.DesktopId && s.PreviousDesktopId != Guid.Empty)
                 _vds.SwitchToDesktop(s.PreviousDesktopId);
+            // Si on est toujours sur le bureau dédié (bascule impossible),
+            // RemoveDesktop refuse id == fallback : le bureau est simplement conservé.
             _vds.RemoveDesktop(s.DesktopId, _vds.CurrentDesktopId);
             AppLog.Info($"Sortie plein écran « {s.AppName} ».");
             SpaceDestroyed?.Invoke(this, s);
@@ -165,7 +211,13 @@ internal sealed class FullscreenSpaceManager : HealthCheckableBase, IDisposable
         return sb.ToString();
     }
 
-    public void Dispose() { _poll.Stop(); _poll.Dispose(); _hook.Dispose(); }
+    public void Dispose()
+    {
+        _poll.Stop();
+        _poll.Dispose();
+        _foregroundHook.Dispose();
+        _locationHook.Dispose();
+    }
 }
 
 internal sealed class SpaceSession

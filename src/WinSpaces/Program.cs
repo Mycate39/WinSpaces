@@ -27,6 +27,20 @@ internal static class Program
             return;
         }
 
+        // Filets de sécurité globaux : journaliser au lieu de laisser le processus
+        // mourir (ou afficher la boîte de dialogue WinForms) sans trace.
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+        Application.ThreadException += (_, e) => AppLog.Error(e.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        {
+            if (e.ExceptionObject is Exception ex) AppLog.Error(ex);
+        };
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            AppLog.Error(e.Exception);
+            e.SetObserved();
+        };
+
         ApplicationConfiguration.Initialize();
 
         using var context = new WinSpacesApplicationContext();

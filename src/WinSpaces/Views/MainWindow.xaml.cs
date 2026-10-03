@@ -23,8 +23,19 @@ public partial class MainWindow : Window
         _viewModel.RefreshDesktopInfo();
     }
 
+    private bool _allowClose;
+
+    /// <summary>Ferme réellement la fenêtre (sortie de l'application).</summary>
+    public void ForceClose()
+    {
+        _allowClose = true;
+        Close();
+    }
+
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
+        if (_allowClose) return;
+
         // Cache la fenêtre plutôt que de la fermer (minimiser dans le tray)
         e.Cancel = true;
         Hide();

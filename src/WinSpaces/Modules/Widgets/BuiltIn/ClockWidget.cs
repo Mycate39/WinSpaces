@@ -7,7 +7,9 @@ namespace WinSpaces.Modules.Widgets.BuiltIn;
 /// </summary>
 public sealed class ClockWidget : WidgetBase
 {
-    public override string Id => "clock-" + Guid.NewGuid().ToString("N")[..8];
+    // Calculé une seule fois : un « => » générait un nouvel Id à chaque lecture,
+    // rendant RemoveWidgetAsync(widget.Id) inopérant.
+    public override string Id { get; } = "clock-" + Guid.NewGuid().ToString("N")[..8];
     public override string Name => "Horloge";
     public override string Description => "Horloge numérique élégante";
     public override double Width => 180;

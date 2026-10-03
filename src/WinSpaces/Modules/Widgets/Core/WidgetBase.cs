@@ -32,7 +32,14 @@ public abstract class WidgetBase : IWidget
         {
             Interval = refreshInterval
         };
-        RefreshTimer.Tick += async (s, e) => await RefreshAsync();
+        RefreshTimer.Tick += OnRefreshTick;
+    }
+
+    private async void OnRefreshTick(object? sender, EventArgs e)
+    {
+        // async void : toute exception non interceptée ferait tomber le dispatcher.
+        try { await RefreshAsync(); }
+        catch (Exception ex) { AppLog.Error(ex); }
     }
 
     public virtual async Task InitializeAsync()
@@ -50,7 +57,7 @@ public abstract class WidgetBase : IWidget
         _disposed = true;
 
         RefreshTimer.Stop();
-        RefreshTimer.Tick -= async (s, e) => await RefreshAsync();
+        RefreshTimer.Tick -= OnRefreshTick;
         AppLog.Info($"Widget '{Name}' : Dispose completed");
     }
 }

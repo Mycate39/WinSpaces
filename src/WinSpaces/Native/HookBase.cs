@@ -34,9 +34,20 @@ internal abstract class LowLevelHookBase : IDisposable
 
     private IntPtr OnHookProc(int nCode, IntPtr wParam, IntPtr lParam)
     {
-        return nCode >= 0
-            ? Process(nCode, wParam, lParam)
-            : NativeMethods.CallNextHookEx(_hook, nCode, wParam, lParam);
+        if (nCode >= 0)
+        {
+            // Callback natif : une exception qui s'en échapperait tuerait le
+            // processus. On journalise et on laisse passer l'événement.
+            try
+            {
+                return Process(nCode, wParam, lParam);
+            }
+            catch (Exception ex)
+            {
+                WinSpaces.Services.AppLog.Error(ex);
+            }
+        }
+        return NativeMethods.CallNextHookEx(_hook, nCode, wParam, lParam);
     }
 
     public void Dispose()

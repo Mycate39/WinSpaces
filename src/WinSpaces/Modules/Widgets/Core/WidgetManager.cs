@@ -62,9 +62,15 @@ public sealed class WidgetManager : HealthCheckableBase, IDisposable
             AppLog.Error(new InvalidOperationException("Erreur initialisation WidgetManager", ex));
         }
     }
+    /// <summary>
+    /// Lance le chargement sans bloquer le thread UI. Un .GetAwaiter().GetResult()
+    /// ici provoquait un deadlock : le WindowsFormsSynchronizationContext (installé
+    /// par le ContextMenuStrip du tray) renvoie les continuations vers ce même
+    /// thread, alors bloqué. InitializeAsync intercepte déjà ses exceptions.
+    /// </summary>
     public void InitializeAndLoadWidgets()
     {
-        InitializeAsync().GetAwaiter().GetResult();
+        _ = InitializeAsync();
     }
 
 
@@ -132,20 +138,7 @@ public sealed class WidgetManager : HealthCheckableBase, IDisposable
     {
         try
         {
-            var config = _activeWidgets.Values.Select(w => new
-            {
-                TypeId = w.GetType().Name,
-                w.Id,
-                w.X,
-                w.Y,
-                w.IsVisible,
-                w.IsPinned,
-                w.Opacity,
-                w.Configuration
-            }).ToList();
-
-            var json = JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true });
-            await File.WriteAllTextAsync(_configPath, json);
+            await File.WriteAllTextAsync(_configPath, SerializeWidgets());
 
             SetMetric("last_save", DateTime.UtcNow);
             AppLog.Info("WidgetManager : Configuration sauvegardée");
@@ -154,6 +147,41 @@ public sealed class WidgetManager : HealthCheckableBase, IDisposable
         {
             AppLog.Error(new InvalidOperationException("Erreur sauvegarde configuration widgets", ex));
         }
+    }
+
+    /// <summary>
+    /// Version synchrone pour la fermeture : bloquer sur la version async depuis
+    /// le thread UI provoquait un deadlock (voir InitializeAndLoadWidgets).
+    /// </summary>
+    private void SaveWidgetsToConfig()
+    {
+        try
+        {
+            File.WriteAllText(_configPath, SerializeWidgets());
+            SetMetric("last_save", DateTime.UtcNow);
+            AppLog.Info("WidgetManager : Configuration sauvegardée");
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error(new InvalidOperationException("Erreur sauvegarde configuration widgets", ex));
+        }
+    }
+
+    private string SerializeWidgets()
+    {
+        var config = _activeWidgets.Values.Select(w => new
+        {
+            TypeId = w.GetType().Name,
+            w.Id,
+            w.X,
+            w.Y,
+            w.IsVisible,
+            w.IsPinned,
+            w.Opacity,
+            w.Configuration
+        }).ToList();
+
+        return JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true });
     }
 
     /// <summary>
@@ -220,7 +248,8 @@ public sealed class WidgetManager : HealthCheckableBase, IDisposable
     /// </summary>
     public void SaveStateAndCloseAll()
     {
-        SaveWidgetsToConfigAsync().GetAwaiter().GetResult();
+        if (_disposed) return;
+        SaveWidgetsToConfig();
         Dispose();
     }
 

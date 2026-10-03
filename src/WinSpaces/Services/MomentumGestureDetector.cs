@@ -1,3 +1,4 @@
+using System.Windows.Threading;
 using WinSpaces.Native;
 using WinSpaces.Configuration;
 
@@ -24,6 +25,7 @@ internal sealed class MomentumGestureDetector : IDisposable
     private DateTime _lastWheelUtc = DateTime.MinValue;
     private DateTime _lastTriggerUtc = DateTime.MinValue;
     private bool _disposed;
+    private Dispatcher? _dispatcher;
 
     /// <summary>
     /// Configure le détecteur de momentum avec les paramètres de configuration.
@@ -47,6 +49,7 @@ internal sealed class MomentumGestureDetector : IDisposable
 
     public void Start()
     {
+        _dispatcher = Dispatcher.CurrentDispatcher;
         _mouseHook.MouseWheel += OnMouseWheel;
         _mouseHook.Install();
     }
@@ -73,7 +76,13 @@ internal sealed class MomentumGestureDetector : IDisposable
         int direction = _accumulatedDelta > 0 ? 1 : -1;
         _accumulatedDelta = 0;
 
-        FlingDetected?.Invoke(this, direction);
+        // On est DANS le hook WH_MOUSE_LL : le changement de bureau (appels COM
+        // vers l'Explorer) pourrait dépasser LowLevelHooksTimeout, et Windows
+        // retire alors le hook silencieusement. On diffère hors du callback.
+        if (_dispatcher is not null)
+            _dispatcher.BeginInvoke(() => FlingDetected?.Invoke(this, direction));
+        else
+            FlingDetected?.Invoke(this, direction);
     }
 
     public void Dispose()

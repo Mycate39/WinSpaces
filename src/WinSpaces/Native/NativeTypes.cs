@@ -84,6 +84,10 @@ internal static class RawInputConstants
 
     // HidP_* (HID parser).
     public const uint HIDP_INPUT = 0;
-    /// <summary>Les fonctions HidP_* retournent 0 (STATUS_SUCCESS) en cas de succès.</summary>
-    public const uint HIDP_STATUS_SUCCESS = 0;
+    /// <summary>
+    /// HIDP_STATUS_SUCCESS (hidpi.h) = HIDP_ERROR_CODES(0x0, 0) = 0x00110000.
+    /// Attention : ce n'est PAS STATUS_SUCCESS (0) — comparer à 0 fait échouer
+    /// tous les appels HidP_*.
+    /// </summary>
+    public const uint HIDP_STATUS_SUCCESS = 0x00110000;
 }
