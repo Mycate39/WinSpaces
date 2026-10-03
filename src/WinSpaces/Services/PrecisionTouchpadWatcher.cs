@@ -86,6 +86,13 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
     // Tampon réutilisé par IsTipDown (appelé pour chaque rapport HID).
     private readonly ushort[] _usageBuffer = new ushort[MaxButtons];
 
+    // Suivi de diagnostic d'un geste (journalisé à sa fin s'il n'a rien déclenché).
+    private bool _gestureActive;
+    private int _gestureFingers;
+    private long _peakX;
+    private long _peakY;
+    private int _reportsLogged;
+
     private long _deltaAccum;
     private bool _swipeTriggered;
     private long _lastReportTs;
@@ -275,12 +282,42 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
         }
         else if (m.Msg == Win32Messages.WM_INPUT_DEVICE_CHANGE)
         {
-            // Un Précision Touchpad a pu être branché/débranché : on ré-évalue
-            // et on recharge les données « preparsed » du nouveau périphérique.
-            AppLog.Info("WM_INPUT_DEVICE_CHANGE : ré-inventaire des dispositifs.");
-            PrecisionTouchpadPresent = EnumeratePrecisionTouchpad();
-            if (PrecisionTouchpadPresent) RegisterTouchpad();
+            OnDeviceChange((int)m.WParam, m.LParam);
         }
+    }
+
+    private const int GIDC_ARRIVAL = 1;
+    private System.Windows.Forms.Timer? _reinventoryTimer;
+
+    /// <summary>
+    /// Branchement / débranchement d'un digitizer. On NE réenregistre PAS le
+    /// pavé ici : l'enregistrement (par usage) reste valable, et
+    /// RegisterRawInputDevices(RIDEV_DEVNOTIFY) renvoie un WM_INPUT_DEVICE_CHANGE
+    /// « arrivée » pour chaque périphérique présent — réenregistrer dans ce
+    /// gestionnaire créait une boucle infinie qui saturait la file de messages
+    /// (aucune fenêtre ne se dessinait) et le journal.
+    /// </summary>
+    private void OnDeviceChange(int change, IntPtr device)
+    {
+        // Notre propre pavé « arrive » : rien à faire (cas de chaque démarrage).
+        if (change == GIDC_ARRIVAL && device == _touchpadDevice && _preparsedData != IntPtr.Zero)
+            return;
+
+        // Rafale d'événements (station d'accueil, Bluetooth…) : un seul
+        // ré-inventaire, 500 ms après le dernier événement.
+        if (_reinventoryTimer is null)
+        {
+            _reinventoryTimer = new System.Windows.Forms.Timer { Interval = 500 };
+            _reinventoryTimer.Tick += (_, _) =>
+            {
+                _reinventoryTimer.Stop();
+                if (_disposed) return;
+                AppLog.Info("Changement de périphérique d'entrée : ré-inventaire du Précision Touchpad.");
+                PrecisionTouchpadPresent = EnumeratePrecisionTouchpad();
+            };
+        }
+        _reinventoryTimer.Stop();
+        _reinventoryTimer.Start();
     }
 
     private void ProcessRawInput(IntPtr hRawInput)
@@ -395,6 +432,7 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
         // posés — un seul déclenchement par geste, comme sur macOS.
         if (_lastReportTs != 0 && now - _lastReportTs > _newSessionTicks)
         {
+            EndGestureTracking();
             _deltaAccum = 0;
             _verticalDeltaAccum = 0;
             _swipeTriggered = false;
@@ -443,15 +481,35 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
         // 3) Décision de balayage.
         int count = _haveContactCount ? _activeContactCount : _activeIds.Count;
 
+        // Trois premiers rapports : preuve que le pavé envoie bien des données
+        // décodables (sinon aucun geste ne pourra jamais être reconnu).
+        if (_reportsLogged < 3)
+        {
+            _reportsLogged++;
+            AppLog.Info($"Rapport HID n°{_reportsLogged} : {reportLen} o, Contact Count {(_haveContactCount ? _activeContactCount.ToString() : "absent")}, contacts suivis {_activeIds.Count}.");
+        }
+
         // Pas assez de doigts : on remet à zéro et on ré-arme le geste.
         if (count < _minContactsForSwipe)
         {
+            EndGestureTracking();
             _deltaAccum = 0;
             _verticalDeltaAccum = 0;
             _swipeTriggered = false;
             _verticalSwipeTriggered = false;
             return;
         }
+
+        if (!_gestureActive)
+        {
+            _gestureActive = true;
+            _gestureFingers = count;
+            _peakX = 0;
+            _peakY = 0;
+        }
+        _gestureFingers = Math.Max(_gestureFingers, count);
+        _peakX = Math.Max(_peakX, Math.Abs(_deltaAccum));
+        _peakY = Math.Max(_peakY, Math.Abs(_verticalDeltaAccum));
 
         // === GESTES HORIZONTAUX (switch bureau) ===
         
@@ -569,6 +627,20 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
     }
 
     /// <summary>
+    /// Fin d'un geste multi-doigts : s'il n'a rien déclenché, on journalise
+    /// l'amplitude atteinte pour pouvoir ajuster les seuils.
+    /// </summary>
+    private void EndGestureTracking()
+    {
+        if (!_gestureActive) return;
+        _gestureActive = false;
+        if (_swipeTriggered || _verticalSwipeTriggered) return;
+
+        AppLog.Info($"Geste {_gestureFingers} doigts sans déclenchement : amplitude X={_peakX} / seuil {_swipeDeltaThreshold}, " +
+                    $"Y={_peakY} / seuil {_verticalSwipeDeltaThreshold}.");
+    }
+
+    /// <summary>
     /// HidP_GetUsageValue en essayant collection 0 (racine) puis 1 (premier
     /// contact imbriqué). Les pavés Précision Touchpad exposent Contact Count
     /// à la racine et X/Y/Contact Identifier dans des collections enfants.
@@ -658,6 +730,9 @@ internal sealed class PrecisionTouchpadWatcher : HealthCheckableBase, IDisposabl
 
         if (_sourceWindow is not null)
             _sourceWindow.WindowMessage -= OnWindowMessage;
+
+        _reinventoryTimer?.Stop();
+        _reinventoryTimer?.Dispose();
 
         FreePreparsedData();
     }

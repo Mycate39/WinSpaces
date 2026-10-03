@@ -11,11 +11,11 @@ public class CountToVisibilityConverter : IValueConverter
 {
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
     {
-        if (value is int count)
-        {
-            return count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        }
-        return Visibility.Collapsed;
+        bool visible = value is int count && count > 0;
+        // Paramètre « Inverse » : visible quand la liste est vide (état vide).
+        if (string.Equals(parameter?.ToString(), "Inverse", StringComparison.OrdinalIgnoreCase))
+            visible = !visible;
+        return visible ? Visibility.Visible : Visibility.Collapsed;
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)

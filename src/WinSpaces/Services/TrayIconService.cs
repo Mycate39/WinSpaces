@@ -20,6 +20,7 @@ internal sealed class TrayIconService : IDisposable
     public event Action? NewSpaceRequested;
     public event Action? MoveWindowRequested;
     public event Action? DashboardRequested;
+    public event Action? LogsRequested;
     public event Action? ExitRequested;
 
     public TrayIconService(AppOptions options)
@@ -30,6 +31,7 @@ internal sealed class TrayIconService : IDisposable
 
         _menu = new ContextMenuStrip();
         _menu.Items.Add(new ToolStripMenuItem("Ouvrir Dashboard", null, (_, _) => DashboardRequested?.Invoke()) { Font = new Font(_menu.Font, FontStyle.Bold) });
+        _menu.Items.Add(new ToolStripMenuItem("Journaux et erreurs…", null, (_, _) => LogsRequested?.Invoke()));
         _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add(new ToolStripMenuItem("Nouvel espace", null, (_, _) => NewSpaceRequested?.Invoke()) { ShortcutKeyDisplayString = "Ctrl+Alt+N" });
         _menu.Items.Add(new ToolStripMenuItem("Espace suivant", null, (_, _) => NextSpaceRequested?.Invoke()) { ShortcutKeyDisplayString = "Ctrl+Alt+→" });
@@ -53,6 +55,15 @@ internal sealed class TrayIconService : IDisposable
 
         _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add(new ToolStripMenuItem("Quitter", null, (_, _) => ExitRequested?.Invoke()));
+
+        // Les options sont aussi modifiables depuis le tableau de bord : on
+        // resynchronise les coches à chaque ouverture du menu.
+        _menu.Opening += (_, _) =>
+        {
+            fsItem.Checked = options.FullscreenSpacesEnabled;
+            gpItem.Checked = options.GesturesEnabled;
+            asItem.Checked = options.AutostartEnabled;
+        };
 
         _icon.ContextMenuStrip = _menu;
     }

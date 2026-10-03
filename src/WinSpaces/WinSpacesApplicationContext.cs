@@ -59,8 +59,14 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
 
     public HealthMonitor HealthMonitor => _healthMonitor;
 
-    public WinSpacesApplicationContext()
+    private readonly bool _safeMode;
+
+    public WinSpacesApplicationContext(bool safeMode = false, bool launchedAtStartup = false)
     {
+        _safeMode = safeMode;
+        // Jalons de démarrage : la dernière ligne « Init » du journal indique
+        // l'étape où un éventuel plantage s'est produit.
+        AppLog.Info("Init 1/5 : application WPF et ressources");
         // IMPORTANT: Initialiser l'application WPF AVANT tout service/fenêtre WPF
         // Cela crée Application.Current, initialise le dispatcher, charge les ressources App.xaml, etc.
         if (System.Windows.Application.Current == null)
@@ -86,6 +92,7 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
         // l'application : on la journalise et on continue.
         Dispatcher.CurrentDispatcher.UnhandledException += OnDispatcherUnhandledException;
 
+        AppLog.Info("Init 2/5 : création des services");
         _vds = new VirtualDesktopService();
         _msgWindow = new MessageWindow();
         _configurationService = new ConfigurationService();
@@ -97,6 +104,7 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
         _globalHotkeys = new GlobalHotkeyManager(_msgWindow);
         _gestures = new GestureManager(_msgWindow, _vds, _configurationService);
         _fullscreen = new FullscreenSpaceManager(_vds, _options);
+        _options.AutostartEnabled = AutostartManager.IsEnabled();
         _tray = new TrayIconService(_options);
         
         // Spotlight Module
@@ -105,11 +113,14 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
         // MenuBar Module
         _menuBarService = new MenuBarService();
 
+        AppLog.Info("Init 3/5 : thème et widgets");
         // Enregistrement des composants pour le diagnostic
         _healthMonitor.Register(_vds);
         _healthMonitor.Register(_themeEngine);
         _healthMonitor.Register(_wallpaperMonitor);
-        _themeEngine.ApplyTheme("DarkTheme"); // Thème par défaut
+        // Clair / sombre selon la config (« Auto » = réglage Windows). L'ancien
+        // DarkTheme forcé ne redéfinissait que le fond : texte illisible.
+        _themeEngine.ApplyMode(_configurationService.Current.Theme.Mode);
 
         _healthMonitor.Register(_widgetManager);
         _widgetManager.InitializeAndLoadWidgets();
@@ -124,8 +135,42 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
         // Enable debug logging if configured
         AppLog.SetDebugEnabled(_configurationService.Current.Global.DebugLogging);
 
+        AppLog.Info("Init 4/5 : événements et raccourcis");
         WireEvents();
+        AppLog.Info("Init 5/5 : démarrage des services");
         StartServices();
+
+        // Lancement manuel : on montre la fenêtre, comme une app macOS. Sans elle,
+        // seule une icône (souvent masquée dans « ^ » sous Windows 11) prouvait
+        // que l'application tournait.
+        if (!launchedAtStartup)
+            Step("ouverture du tableau de bord", () => ShowDashboard());
+
+        System.Windows.Forms.Application.Idle += OnFirstIdle;
+        AppLog.Info("Démarrage terminé.");
+    }
+
+    private static void OnFirstIdle(object? sender, EventArgs e)
+    {
+        System.Windows.Forms.Application.Idle -= OnFirstIdle;
+        AppLog.Info("Boucle de messages active : WinSpaces est opérationnel.");
+    }
+
+    /// <summary>
+    /// Étape de démarrage NON critique : journalisée, et un échec n'empêche pas
+    /// le reste de l'application de démarrer.
+    /// </summary>
+    private static void Step(string name, Action action)
+    {
+        AppLog.Info($"  → {name}");
+        try
+        {
+            action();
+        }
+        catch (Exception ex)
+        {
+            AppLog.Error(new InvalidOperationException($"Échec de l'étape « {name} » (ignorée)", ex));
+        }
     }
 
 
@@ -166,25 +211,27 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
 
     private void WireEvents()
     {
-        _hotkeys.NextSpaceRequested += (_, _) => _vds.SwitchByOffset(1);
-        _hotkeys.PreviousSpaceRequested += (_, _) => _vds.SwitchByOffset(-1);
+        _hotkeys.NextSpaceRequested += (_, _) => SwitchSpace(1, "raccourci");
+        _hotkeys.PreviousSpaceRequested += (_, _) => SwitchSpace(-1, "raccourci");
         _hotkeys.NewSpaceRequested += (_, _) =>
         {
             var id = _vds.CreateDesktop();
             if (id != Guid.Empty) _vds.SwitchToDesktop(id);
+            AppLog.Info($"Nouvel espace créé : {(id != Guid.Empty ? "OK" : "ÉCHEC")}.");
         };
         _hotkeys.MoveWindowRequested += (_, _) => MoveForegroundWindowToNextDesktop();
 
         // L'option « Gestes trackpad » du tray n'était lue nulle part.
-        _gestures.SpaceSwitchRequested += (_, dir) => { if (_options.GesturesEnabled) _vds.SwitchByOffset(dir); };
-        _gestures.DesktopSwitchRequested += (_, dir) => { if (_options.GesturesEnabled) _vds.SwitchByOffset(dir); };
+        _gestures.SpaceSwitchRequested += (_, dir) => SwitchSpace(dir, "geste 3 doigts");
+        _gestures.DesktopSwitchRequested += (_, dir) => SwitchSpace(dir, "geste 4 doigts");
 
         _gestures.MissionControlRequested += (_, _) => { if (_options.GesturesEnabled) ShowDashboard(); };
         _gestures.AppExposeRequested += (_, _) => { if (_options.GesturesEnabled) ShowDashboard(); }; // Pour l'instant même action que Mission Control
 
-        _tray.DashboardRequested += ShowDashboard;
-        _tray.NextSpaceRequested += () => _vds.SwitchByOffset(1);
-        _tray.PreviousSpaceRequested += () => _vds.SwitchByOffset(-1);
+        _tray.DashboardRequested += () => ShowDashboard();
+        _tray.LogsRequested += () => ShowDashboard(MainViewModel.SectionLogs);
+        _tray.NextSpaceRequested += () => SwitchSpace(1, "menu");
+        _tray.PreviousSpaceRequested += () => SwitchSpace(-1, "menu");
         _tray.NewSpaceRequested += () =>
         {
             var id = _vds.CreateDesktop();
@@ -195,6 +242,30 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
         
         // Spotlight hotkey: Alt+Space
         RegisterSpotlightHotkey();
+    }
+
+    private DateTime _lastSingleDesktopHintUtc = DateTime.MinValue;
+
+    private void SwitchSpace(int offset, string source)
+    {
+        if (source.StartsWith("geste") && !_options.GesturesEnabled)
+        {
+            AppLog.Info($"Bascule ({source}) ignorée : gestes désactivés dans les réglages.");
+            return;
+        }
+
+        AppLog.Info($"Bascule d'espace {(offset > 0 ? "suivant" : "précédent")} demandée ({source}).");
+        if (_vds.SwitchByOffset(offset)) return;
+
+        // Un seul bureau : rien vers quoi basculer. On l'explique (au plus une
+        // fois par minute) au lieu de donner l'impression que rien ne marche.
+        if (_vds.IsInternalApiAvailable && _vds.GetDesktopIds().Count < 2
+            && DateTime.UtcNow - _lastSingleDesktopHintUtc > TimeSpan.FromMinutes(1))
+        {
+            _lastSingleDesktopHintUtc = DateTime.UtcNow;
+            _tray.ShowInfo("WinSpaces — un seul espace",
+                "Créez un deuxième espace avec Ctrl+Alt+N (ou le menu de l'icône WinSpaces) pour pouvoir basculer.");
+        }
     }
 
     private void RegisterSpotlightHotkey()
@@ -218,29 +289,37 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
 
     private void StartServices()
     {
-        bool ok = _vds.Initialize();
-        if (!ok)
+        Step("bureaux virtuels (COM)", () =>
         {
-            _tray.ShowInfo("WinSpaces",
-                "API bureaux virtuels indisponible. Seule l'icône sera active.");
+            if (!_vds.Initialize())
+                _tray.ShowInfo("WinSpaces", "API bureaux virtuels indisponible. Seule l'icône sera active.");
+        });
+        Step("raccourcis clavier", () => _hotkeys.Install());
+
+        if (_safeMode)
+        {
+            AppLog.Warning("Mode sans échec : gestes, plein écran automatique et barre de menu désactivés.");
         }
-        _hotkeys.Install();
-        _gestures.Start();
-        _fullscreen.Start();
-        
+        else
+        {
+            Step("gestes (touchpad / molette)", () => _gestures.Start());
+            Step("plein écran automatique", () => _fullscreen.Start());
+        }
+
         // Initialiser Spotlight (indexation en arrière-plan)
-        _ = _spotlightService.InitializeAsync();
-        
-        // Initialiser et afficher MenuBar
-        _menuBarService.Start();
-        AppLog.Info("WinSpacesApplicationContext: MenuBar service started.");
-        ShowMenuBar();
-        
-        _tray.ShowInfo($"WinSpaces v{System.Windows.Forms.Application.ProductVersion.Split('+')[0]}",
+        Step("Spotlight", () => _ = _spotlightService.InitializeAsync());
+
+        if (!_safeMode)
+        {
+            Step("service de barre de menu", () => _menuBarService.Start());
+            Step("fenêtre de barre de menu", ShowMenuBar);
+        }
+
+        _tray.ShowInfo($"WinSpaces v{System.Windows.Forms.Application.ProductVersion.Split('+')[0]}{(_safeMode ? " (sans échec)" : "")}",
             "Ctrl+Alt+←/→ pour changer d'espace | Alt+Espace pour Spotlight");
     }
 
-    private void ShowDashboard()
+    private void ShowDashboard(string? section = null)
     {
         if (_mainWindow == null || !_mainWindow.IsLoaded)
         {
@@ -250,6 +329,8 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
             _mainWindow.Closed += (_, _) => _mainWindow = null;
         }
 
+        if (section is not null) _mainWindow.ShowSection(section);
+        if (_mainWindow.WindowState == WindowState.Minimized) _mainWindow.WindowState = WindowState.Normal;
         _mainWindow.Show();
         _mainWindow.Activate();
     }
@@ -306,7 +387,7 @@ internal sealed class WinSpacesApplicationContext : ApplicationContext
         if (idx < 0 || ids.Count < 2) return;
         int target = (idx + 1) % ids.Count;
         _vds.MoveWindowToDesktop(fg, ids[target]);
-        _vds.SwitchToDesktop(ids[target]);
+        _vds.SwitchToDesktop(ids[target], moveForegroundWindow: true);
     }
 
     private void ExitApplication()

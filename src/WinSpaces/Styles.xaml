@@ -29,12 +29,14 @@
 
     <!-- /Couleurs -->
 
-    <!-- Rayon d'arrondi -->
-    <system:Double x:Key="CornerRadiusExtraSmall">2</system:Double>
-    <system:Double x:Key="CornerRadiusSmall">8</system:Double>
-    <system:Double x:Key="CornerRadiusMedium">12</system:Double>
-    <system:Double x:Key="CornerRadiusLarge">16</system:Double>
-    <system:Double x:Key="CornerRadiusExtraLarge">20</system:Double>
+    <!-- Rayon d'arrondi : type CornerRadius OBLIGATOIRE. Un StaticResource n'est
+         pas converti : un system:Double affecté à Border.CornerRadius levait une
+         exception à l'affichage de la barre de menu, donc au démarrage. -->
+    <CornerRadius x:Key="CornerRadiusExtraSmall">2</CornerRadius>
+    <CornerRadius x:Key="CornerRadiusSmall">8</CornerRadius>
+    <CornerRadius x:Key="CornerRadiusMedium">12</CornerRadius>
+    <CornerRadius x:Key="CornerRadiusLarge">16</CornerRadius>
+    <CornerRadius x:Key="CornerRadiusExtraLarge">20</CornerRadius>
     <!-- /Rayon d'arrondi -->
 
     <!-- Épaisseurs -->

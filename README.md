@@ -2,14 +2,15 @@
 
 Reproduit les **Espaces** (Spaces) de macOS sur Windows — une application **open-source** en C# / .NET 8 qui vit dans la barre des tâches, donne un bureau virtuel dédié à chaque application en plein écran et permet de basculer d'espace via gestes du trackpad et raccourcis clavier.
 
-> **Statut :** v3.3.1 — version de fiabilisation (audit complet : décodage HID du Précision Touchpad, bascule d'espace COM, raccourcis, deadlocks, fuites COM/handles). Support complet de Windows 11 24H2, 25H2 et 26H2 (build 26100+), bureaux virtuels, hotkeys, momentum, gestes Précision Touchpad **style macOS (3/4 doigts horizontal + vertical)**, publish single-file automatisé, et **Dashboard WPF** avec diagnostic système intégré. Thèmes Light/Dark stables avec préservation des styles de base.
+> **Statut :** v3.4.0 — nouveau **tableau de bord style macOS** avec console des journaux et des erreurs, démarrage enfin stable sur Windows 11 25H2 (plantage XAML et boucle infinie du touchpad corrigés), bascule d'espace fiabilisée, mode sans échec et outil de diagnostic. Support complet de Windows 11 24H2, 25H2 et 26H2 (build 26100+), bureaux virtuels, hotkeys, momentum, gestes Précision Touchpad **style macOS (3/4 doigts horizontal + vertical)**, publish single-file automatisé, et **Dashboard WPF** avec diagnostic système intégré. Thèmes Light/Dark stables avec préservation des styles de base.
 
 ## Fonctionnalités
 
 | Fonctionnalité | Description |
 |---|---|
-| **Dashboard WPF** 🆕 | Interface graphique moderne affichant l'état de santé de tous les composants système en temps réel. Accès depuis le menu de la barre des tâches. |
-| **Diagnostic système** 🆕 | Surveillance automatique des services : API COM bureaux virtuels, hooks système, Precision Touchpad, raccourcis clavier. |
+| **Tableau de bord macOS** 🆕 | Fenêtre façon macOS (feux tricolores, barre latérale, thème clair/sombre qui suit Windows) : aperçu (espace actuel, santé, erreurs), réglages à interrupteurs, diagnostic des composants. S'ouvre au lancement manuel et depuis l'icône de la barre des tâches. |
+| **Console des journaux** 🆕 | Inspirée de Console.app : journal en direct, filtres Erreurs / Avertissements / Infos / Debug, recherche, détail des traces d'exception, copie, et **répertoire des fichiers journaux** (`winspaces.log` et son archive) avec ouverture du dossier. |
+| **Diagnostic système** | Surveillance des services : API COM bureaux virtuels, hooks système, Precision Touchpad, raccourcis clavier. |
 | **Espace plein écran automatique** | Quand une app passe en plein écran, WinSpaces crée un bureau virtuel, y déplace la fenêtre et y bascule. À la sortie, l'espace est supprimé et on revient au bureau d'origine. |
 | **Gestes trackpad (momentum)** | Balayage horizontal 2 doigts / molette horizontale soutenue → changement d'espace. Fonctionne sur tous les périphériques. |
 | **Précision Touchpad (3/4 doigts)** | Sur les portables Windows 10/11 compatibles : détection automatique, balayage 3+ doigts via Raw Input HID (HidP_* indépendant du constructeur). |
@@ -28,7 +29,7 @@ Reproduit les **Espaces** (Spaces) de macOS sur Windows — une application **op
 | Déplacer fenêtre vers l'espace suivant | `Ctrl+Alt+W` |
 | Spotlight | `Alt+Espace` |
 
-> Les options « Espace plein écran auto » et « Gestes trackpad » du menu de la barre des tâches sont prises en compte immédiatement (non persistées entre deux lancements).
+> Les options « Espace plein écran auto » et « Gestes trackpad » (menu de la barre des tâches ou tableau de bord) sont prises en compte immédiatement (non persistées entre deux lancements). Avec un seul bureau, une notification propose d'en créer un avec `Ctrl+Alt+N`.
 
 ## Prérequis
 
@@ -53,6 +54,13 @@ dotnet publish src/WinSpaces/WinSpaces.csproj -c Release -r win-x64 --self-conta
 ```
 
 > Un workflow GitHub Actions automatise cette étape à chaque tag `v*`. Voir les [Releases](https://github.com/Mycate39/WinSpaces/releases) pour l'exécutable pré-compilé.
+
+## Dépannage
+
+- **Journal** : `%LOCALAPPDATA%\WinSpaces\winspaces.log` (archivé en `winspaces.log.old` au-delà de 5 Mo), consultable directement dans le tableau de bord → *Journaux*. Chaque démarrage y trace ses étapes (`Init 1/5` … `Démarrage terminé`).
+- **Erreur au démarrage** : une fenêtre affiche l'erreur et le chemin du journal au lieu d'une fermeture silencieuse.
+- **Mode sans échec** : `WinSpaces.exe --safe` démarre sans gestes, plein écran automatique ni barre de menu, pour isoler un module défaillant.
+- **Outil de diagnostic** : placez `scripts/Diagnostic WinSpaces.cmd` et `scripts/diagnostic-windows.ps1` à côté de `WinSpaces.exe` puis double-cliquez sur le `.cmd`. Il lance l'application, propose un test interactif (raccourcis, gestes) et produit `WinSpaces-diagnostic.txt` sur le Bureau (journal + erreurs Windows).
 
 ## Arborescence
 
@@ -87,6 +95,14 @@ src/WinSpaces/
     AppLog.cs                          ← journal %LOCALAPPDATA%\WinSpaces\ (rotation à 5 Mo)
     AppOptions.cs                      ← options en mémoire (v0.1)
     AutostartManager.cs                ← registre HKCU\...\Run
+  Modules/Logs/
+    LogParser.cs / LogFileTail.cs      ← lecture incrémentale du journal
+    LogViewerViewModel.cs              ← console des journaux (filtres, recherche, direct)
+  Views/
+    MainWindow.xaml                    ← tableau de bord style macOS
+    MacStyles.xaml                     ← styles macOS (barre latérale, interrupteurs…)
+scripts/
+  Diagnostic WinSpaces.cmd             ← outil de diagnostic Windows (double-clic)
 ```
 
 ## Architecture technique
@@ -99,7 +115,6 @@ src/WinSpaces/
 
 ## Limitations connues
 
-- **Windows 11 24H2+** : la bascule d'espace utilise `SwitchDesktopAndMoveForegroundView`, qui peut emmener la fenêtre active vers l'espace cible (à confirmer).
 - **Windows 11 21H2 / 22H2 (avant les mises à jour 2023)** utilise d'autres IID COM : WinSpaces se rabat alors sur l'API officielle (fonctions réduites).
 - Un Précision Touchpad branché **après** le lancement n'est pas relié aux gestes (redémarrer WinSpaces).
 - Les widgets n'actualisent pas encore leur affichage en temps réel.

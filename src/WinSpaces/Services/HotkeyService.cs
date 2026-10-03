@@ -76,7 +76,11 @@ internal sealed class HotkeyService : HealthCheckableBase, IDisposable
     {
         if (m.Msg != Win32Messages.WM_HOTKEY) return;
 
-        switch (m.WParam.ToInt32())
+        int id = m.WParam.ToInt32();
+        if (_registeredIds.Contains(id))
+            AppLog.Info($"Raccourci reçu : id 0x{id:X}.");
+
+        switch (id)
         {
             case IdNextSpace:
                 NextSpaceRequested?.Invoke(this, EventArgs.Empty);

@@ -1,5 +1,35 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <SolidColorBrush x:Key="WindowBackground" Color="#1E1E1E"/>
-    <SolidColorBrush x:Key="ForegroundBrush" Color="#E0E0E0"/>
+    <!-- Palette sombre style macOS. Le ThemeEngine remplace ce dictionnaire
+         en bloc : chaque clé doit exister dans les DEUX thèmes. -->
+    <SolidColorBrush x:Key="WindowBackground" Color="#FF1E1E1E"/>
+    <SolidColorBrush x:Key="ContentBackground" Color="#FF1E1E1E"/>
+    <SolidColorBrush x:Key="SidebarBackground" Color="#FF2A2A2D"/>
+    <SolidColorBrush x:Key="CardBackground" Color="#FF2C2C2E"/>
+    <SolidColorBrush x:Key="ControlBackground" Color="#FF3A3A3C"/>
+    <SolidColorBrush x:Key="BorderColor" Color="#FF3A3A3C"/>
+    <SolidColorBrush x:Key="WindowBorderBrush" Color="#33FFFFFF"/>
+    <SolidColorBrush x:Key="SeparatorBrush" Color="#FF38383A"/>
+    <SolidColorBrush x:Key="TextPrimary" Color="#FFF5F5F7"/>
+    <SolidColorBrush x:Key="TextSecondary" Color="#FF98989D"/>
+    <SolidColorBrush x:Key="TextTertiary" Color="#FF636366"/>
+    <SolidColorBrush x:Key="AccentBrush" Color="#FF0A84FF"/>
+    <SolidColorBrush x:Key="AccentHoverBrush" Color="#FF409CFF"/>
+    <SolidColorBrush x:Key="AccentSoftBrush" Color="#330A84FF"/>
+    <SolidColorBrush x:Key="SidebarHoverBrush" Color="#14FFFFFF"/>
+    <SolidColorBrush x:Key="SidebarSelectionBrush" Color="#24FFFFFF"/>
+    <SolidColorBrush x:Key="ListHoverBrush" Color="#0FFFFFFF"/>
+    <SolidColorBrush x:Key="SelectionBrush" Color="#3D0A84FF"/>
+    <SolidColorBrush x:Key="ErrorBrush" Color="#FFFF453A"/>
+    <SolidColorBrush x:Key="ErrorSoftBrush" Color="#33FF453A"/>
+    <SolidColorBrush x:Key="WarningBrush" Color="#FFFF9F0A"/>
+    <SolidColorBrush x:Key="WarningSoftBrush" Color="#33FF9F0A"/>
+    <SolidColorBrush x:Key="InfoBrush" Color="#FF0A84FF"/>
+    <SolidColorBrush x:Key="InfoSoftBrush" Color="#330A84FF"/>
+    <SolidColorBrush x:Key="DebugBrush" Color="#FF98989D"/>
+    <SolidColorBrush x:Key="DebugSoftBrush" Color="#3398989D"/>
+    <SolidColorBrush x:Key="SuccessBrush" Color="#FF30D158"/>
+    <SolidColorBrush x:Key="SuccessSoftBrush" Color="#3330D158"/>
+    <SolidColorBrush x:Key="ScrollThumbBrush" Color="#55FFFFFF"/>
+    <SolidColorBrush x:Key="ForegroundBrush" Color="#FFF5F5F7"/>
 </ResourceDictionary>

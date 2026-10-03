@@ -90,13 +90,6 @@ public sealed class VirtualDesktopService : HealthCheckableBase, IDisposable
             Marshal.ReleaseComObject(rcw);
     }
 
-    /// <summary>
-    /// GetAdjacentDesktop attend une direction AdjacentDesktop (3 = gauche,
-    /// 4 = droite), et non -1/+1 qui renvoient E_INVALIDARG.
-    /// </summary>
-    private const int AdjacentLeft = 3;
-    private const int AdjacentRight = 4;
-
     /// <summary>GUID de l'interface IVirtualDesktop correspondant au schéma actif.</summary>
     private Guid DesktopGuid
         => _w10 != null ? typeof(IVirtualDesktop10).GUID : typeof(IVirtualDesktop).GUID;
@@ -182,7 +175,11 @@ public sealed class VirtualDesktopService : HealthCheckableBase, IDisposable
     // @@BASCULE@@
 
     /// <summary>Bascule vers le bureau d'identifiant <paramref name="id"/>.</summary>
-    public bool SwitchToDesktop(Guid id)
+    /// <param name="moveForegroundWindow">
+    /// Windows 11 24H2+ uniquement : emmène aussi la fenêtre active. Faux par
+    /// défaut — une bascule d'espace « à la macOS » ne déplace aucune fenêtre.
+    /// </param>
+    public bool SwitchToDesktop(Guid id, bool moveForegroundWindow = false)
     {
         if (id == Guid.Empty) return false;
 
@@ -192,7 +189,12 @@ public sealed class VirtualDesktopService : HealthCheckableBase, IDisposable
             if (vd is null) return false;
             try
             {
-                if (_w11New != null && vd is IVirtualDesktop d112) { _w11New.SwitchDesktopAndMoveForegroundView(d112); return true; }
+                if (_w11New != null && vd is IVirtualDesktop d112)
+                {
+                    if (moveForegroundWindow) _w11New.SwitchDesktopAndMoveForegroundView(d112);
+                    else _w11New.SwitchDesktop(d112);
+                    return true;
+                }
                 if (_w11Last != null && vd is IVirtualDesktop d11) { _w11Last.SwitchDesktop(d11); return true; }
                 if (_w10 != null && vd is IVirtualDesktop10 d10) { _w10.SwitchDesktop(d10); return true; }
                 return false;
@@ -208,60 +210,34 @@ public sealed class VirtualDesktopService : HealthCheckableBase, IDisposable
             return false;
         }
     }
-    /// <summary>Bascule de <paramref name="offset"/> bureaux (-1 = précédent, +1 = suivant).</summary>
+    /// <summary>
+    /// Bascule de <paramref name="offset"/> bureaux (-1 = précédent, +1 = suivant).
+    /// Le voisin est calculé depuis la liste ordonnée des bureaux plutôt que via
+    /// GetAdjacentDesktop (non documentée, sémantique de direction variable selon
+    /// les builds) : on réutilise ainsi les seuls appels déjà éprouvés.
+    /// </summary>
     public bool SwitchByOffset(int offset)
     {
         if (offset != -1 && offset != 1) return false;
-        int direction = offset < 0 ? AdjacentLeft : AdjacentRight;
 
-        try
+        var ids = GetDesktopIds();
+        int index = CurrentDesktopIndex;
+        if (ids.Count == 0 || index < 0)
         {
-            if (_w11New != null)
-            {
-                var current = _w11New.GetCurrentDesktop();
-                if (current is null) return false;
-                try
-                {
-                    int hr = _w11New.GetAdjacentDesktop(current, direction, out var target);
-                    if (hr != 0 || target is null) return false;
-                    try { _w11New.SwitchDesktopAndMoveForegroundView(target); return true; }
-                    finally { Marshal.ReleaseComObject(target); }
-                }
-                finally { Marshal.ReleaseComObject(current); }
-            }
-            if (_w11Last != null)
-            {
-                var current = _w11Last.GetCurrentDesktop();
-                if (current is null) return false;
-                try
-                {
-                    int hr = _w11Last.GetAdjacentDesktop(current, direction, out var target);
-                    if (hr != 0 || target is null) return false;
-                    try { _w11Last.SwitchDesktop(target); return true; }
-                    finally { Marshal.ReleaseComObject(target); }
-                }
-                finally { Marshal.ReleaseComObject(current); }
-            }
-            if (_w10 != null)
-            {
-                var current = _w10.GetCurrentDesktop();
-                if (current is null) return false;
-                try
-                {
-                    int hr = _w10.GetAdjacentDesktop(current, direction, out var target);
-                    if (hr != 0 || target is null) return false;
-                    try { _w10.SwitchDesktop(target); return true; }
-                    finally { Marshal.ReleaseComObject(target); }
-                }
-                finally { Marshal.ReleaseComObject(current); }
-            }
+            AppLog.Warning($"Bascule impossible : {ids.Count} bureau(x) lu(s), index courant {index} ({GetStatusMessage()}).");
             return false;
         }
-        catch (Exception ex)
+
+        int target = index + offset;
+        if (target < 0 || target >= ids.Count)
         {
-            AppLog.Error(ex);
+            AppLog.Info($"Bascule ignorée : déjà sur le {(offset < 0 ? "premier" : "dernier")} bureau ({index + 1}/{ids.Count}).");
             return false;
         }
+
+        bool ok = SwitchToDesktop(ids[target]);
+        AppLog.Info($"Bascule bureau {index + 1} → {target + 1} (sur {ids.Count}) : {(ok ? "OK" : "ÉCHEC")}.");
+        return ok;
     }
 
     /// <summary>Crée un nouveau bureau après le bureau courant ; retourne son GUID.</summary>
@@ -555,6 +531,8 @@ public sealed class VirtualDesktopService : HealthCheckableBase, IDisposable
             }
 
             AppLog.Info($"Bureaux virtuels → interne={IsInternalApiAvailable}, officiel={IsOfficialApiAvailable}.");
+            if (IsInternalApiAvailable)
+                AppLog.Info($"Bureaux virtuels : {GetDesktopIds().Count} bureau(x), courant n°{CurrentDesktopIndex + 1}.");
             return IsInternalApiAvailable || IsOfficialApiAvailable;
         }
         catch (Exception ex)

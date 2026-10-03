@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Windows;
+using Microsoft.Win32;
 using WinSpaces.Diagnostics;
 using WinSpaces.Services;
 using Application = System.Windows.Application;
@@ -20,6 +21,35 @@ public sealed class ThemeEngine : HealthCheckableBase
     public ThemeEngine()
     {
         SetMetric("theme_mode", "Unknown");
+    }
+
+    /// <summary>
+    /// Applique le thème selon le mode configuré : "Light", "Dark" ou "Auto"
+    /// (suit le réglage Windows « mode des applications »).
+    /// </summary>
+    public void ApplyMode(string? mode)
+    {
+        var themeName = mode?.Trim().ToLowerInvariant() switch
+        {
+            "light" => "LightTheme",
+            "dark" => "DarkTheme",
+            _ => IsSystemLightTheme() ? "LightTheme" : "DarkTheme"
+        };
+        ApplyTheme(themeName);
+    }
+
+    private static bool IsSystemLightTheme()
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(
+                @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+            return key?.GetValue("AppsUseLightTheme") is not int value || value != 0;
+        }
+        catch
+        {
+            return true;
+        }
     }
 
     public void ApplyTheme(string themeName)
